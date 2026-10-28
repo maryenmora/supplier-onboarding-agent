@@ -2,7 +2,7 @@
 
 > **Proyecto:** PRD-01: Agente Conversacional "Registro como Proveedor" — Periferia IT Group  
 > **Última Actualización:** 2026-10-28  
-> **Fase Actual:** **FASE 5 CULMINADA — PROYECTO AUDITADO Y APTO PARA DESPLIEGUE EN GITHUB + RENDER**  
+> **Fase Actual:** **PUBLICACIÓN COMPLETADA — REPOSITORIO GITHUB SINCRONIZADO EN MAIN (LISTO PARA RENDER)**  
 
 ---
 
@@ -17,6 +17,7 @@
 | **Fase 3.2**| **Correcciones de Consistencia, Seguridad y UX** | **COMPLETADO Y PROBADO** | 37 tests unitarios + Playwright E2E verificado | [`docs/FASE_03_2_CORRECCIONES.md`](file:///c:/Proyectos/periferia/capacitación-perxia\dia5/docs/FASE_03_2_CORRECCIONES.md) |
 | **Fase 4** | **Bonus Módulo Reutilizable y Documentación Final** | **COMPLETADO Y PROBADO** | Playwright E2E (10 evidencias) + 37 tests unitarios | [`docs/FASE_04_ENTREGA.md`](file:///c:/Proyectos/periferia/capacitación-perxia\dia5/docs/FASE_04_ENTREGA.md) |
 | **Fase 5** | **Auditoría Prepublicación y Despliegue Render** | **COMPLETADO Y PROBADO** | 44 tests unitarios + Playwright (2 navegadores) + Build OK | [`docs/VALIDACION_FINAL_PUBLICACION.md`](file:///c:/Proyectos/periferia/capacitación-perxia\dia5/docs/VALIDACION_FINAL_PUBLICACION.md) |
+| **Publicación** | **Publicación Segura en GitHub (origin/main)** | **COMPLETADO Y PUBLICADO** | `git push -u origin main` sin `--force` + merge seguro | [`docs/PUBLICACION_GITHUB.md`](file:///c:/Proyectos/periferia/capacitación-perxia\dia5/docs/PUBLICACION_GITHUB.md) |
 
 ---
 
@@ -111,6 +112,7 @@
    - [`docs/FASE_04_ENTREGA.md`](file:///c:/Proyectos/periferia/capacitación-perxia\dia5/docs/FASE_04_ENTREGA.md)
    - [`docs/FASE_05_PREPUBLICACION.md`](file:///c:/Proyectos/periferia/capacitación-perxia\dia5/docs/FASE_05_PREPUBLICACION.md)
    - [`docs/VALIDACION_FINAL_PUBLICACION.md`](file:///c:/Proyectos/periferia/capacitación-perxia\dia5/docs/VALIDACION_FINAL_PUBLICACION.md)
+   - [`docs/PUBLICACION_GITHUB.md`](file:///c:/Proyectos/periferia/capacitación-perxia\dia5/docs/PUBLICACION_GITHUB.md)
 6. **Evidencias Gráficas E2E:** 10 capturas de pantalla en `docs/evidencias/`.
 7. **Suite de Pruebas Automatizadas:** 44 pruebas unitarias e integración en `test/*.test.ts`, validación Playwright con aislamiento de dos navegadores en `test/e2e/browser-validation.ts`.
 8. **Script Determinista CLI:** `demo.ts`.
