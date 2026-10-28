@@ -2,7 +2,7 @@
 
 > **Proyecto:** PRD-01: Agente Conversacional "Registro como Proveedor" — Periferia IT Group  
 > **Última Actualización:** 2026-10-28  
-> **Fase Actual:** **PREDESPLIEGUE AUDITADO Y CORREGIDO — LISTO PARA DESPLIEGUE EN RENDER**  
+> **Fase Actual:** **DESPLEGADO EN PRODUCCIÓN (RENDER) — AUDITADO Y VALIDADO**
 
 ---
 
@@ -90,7 +90,7 @@
 | **3. Grounding, Integridad y Seguridad (RN1-RN5)** | 20 | **Completado** | 20 | Cero alucinación (CA2), regla fiscal RN1, protección de datos bancarios RN2, semáforo de vigencias RN3, reloj inyectable y defensa contra Path Traversal. |
 | **4. Calidad del Código y Arquitectura** | 15 | **Completado** | 15 | TypeScript estricto sin `any`, modularidad en `src/services/`, separación frontend/backend, Hono framework y cero dependencias obsoletas. |
 | **5. Frontend Conversacional y UX** | 10 | **Completado** | 10 | React 19 SPA, Tailwind CSS, panel tripartito responsivo, visualización de tool calls, descargas directas y 0 errores `'Invalid Date'`. |
-| **6. Documentación (`SOLUCION.md` y `README.md`)** | 10 | **Completado** | 10 | `SOLUCION.md` con las 10 secciones obligatorias, costos reales medidos (\$0.0020 USD/caso), diseño de portales y `README.md` completo. |
+| **6. Documentación (`SOLUCION.md` y `README.md`)** | 10 | **Completado** | 10 | `SOLUCION.md` con las 10 secciones obligatorias, estimación de costos estándar (\$0.0075729 USD/caso, \$0.00 facturado), diseño de portales y `README.md` completo. |
 | **SUBTOTAL BASE** | **100** | — | **100** | **Cumplimiento 100% de los requisitos obligatorios.** |
 | **BONUS: Módulo Reutilizable (`modulo/`)** | +10 | **Completado** | +10 | Carpeta `modulo/` con `agent.md`, `tools/proveedor.ts` y `skill/` exportando exactamente las mismas herramientas sin divergencia. |
 | **PUNTAJE TOTAL PROYECTADO** | **110** | — | **110 / 100** | **Calificación sobresaliente con bonus completo.** |
@@ -117,7 +117,9 @@
    - [`docs/VALIDACION_FINAL_PUBLICACION.md`](file:///c:/Proyectos/periferia/capacitación-perxia\dia5/docs/VALIDACION_FINAL_PUBLICACION.md)
    - [`docs/PUBLICACION_GITHUB.md`](file:///c:/Proyectos/periferia/capacitación-perxia\dia5/docs/PUBLICACION_GITHUB.md)
    - [`docs/CORRECCION_PRE_RENDER.md`](file:///c:/Proyectos/periferia/capacitación-perxia\dia5/docs/CORRECCION_PRE_RENDER.md)
+   - [`docs/CORRECCION_FINAL_SEGURIDAD.md`](file:///c:/Proyectos/periferia/capacitación-perxia\dia5/docs/CORRECCION_FINAL_SEGURIDAD.md)
+   - [`docs/FIX_DESCARGAS_RENDER.md`](file:///c:/Proyectos/periferia/capacitación-perxia\dia5/docs/FIX_DESCARGAS_RENDER.md)
 6. **Evidencias Gráficas E2E:** 10 capturas de pantalla en `docs/evidencias/`.
-7. **Suite de Pruebas Automatizadas:** 44 pruebas unitarias e integración en `test/*.test.ts`, validación Playwright con aislamiento de dos navegadores en `test/e2e/browser-validation.ts`.
+7. **Suite de Pruebas Automatizadas:** 47 pruebas unitarias e integración en `test/*.test.ts`, validación Playwright con aislamiento de dos navegadores en `test/e2e/browser-validation.ts`.
 8. **Script Determinista CLI:** `demo.ts`.
 9. **Configuración de Seguridad y Despliegue Cloud:** `.gitignore` (exclusión estricta de `.env`, `node_modules/`, `out/`), `.env.example`, `render.yaml` (Blueprint declarativo) y servicio de blindaje `src/core/guard.ts`.
