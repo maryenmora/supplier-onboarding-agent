@@ -159,3 +159,4 @@ $ npm run test:e2e
 # **APTO PARA DESPLIEGUE PÚBLICO EN GITHUB Y RENDER**
 
 La aplicación satisface plenamente los requisitos de aislamiento multi-visitante, contención de archivos, control de presupuesto y consumo de API, compatibilidad con builds limpios en Render y resguardo riguroso de secretos. Queda en espera de la autorización explícita del usuario para vincular el repositorio remoto y ejecutar el despliegue.
+
