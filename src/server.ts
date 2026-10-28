@@ -12,6 +12,8 @@ import { MockAdapter } from "./llm/mock.js";
 import { SessionManager } from "./core/session.js";
 import { AgentEngine } from "./core/agent.js";
 import { ResourceGuard } from "./core/guard.js";
+import { FixtureService } from "./services/fixture-service.js";
+import { SupportService } from "./services/support-service.js";
 
 dotenv.config();
 
@@ -307,16 +309,52 @@ export function createServer(options?: {
     if (targetCaso) {
       const sessionChecklistPath = path.resolve(baseDir, "out", "sessions", id, targetCaso, "paquete", "checklist.md");
       const globalChecklistPath = path.resolve(baseDir, "out", targetCaso, "paquete", "checklist.md");
-      const checklistPath = fs.existsSync(sessionChecklistPath) ? sessionChecklistPath : globalChecklistPath;
+      let checklistPath = fs.existsSync(sessionChecklistPath) ? sessionChecklistPath : globalChecklistPath;
 
+      if (!fs.existsSync(checklistPath)) {
+        const sessionsBase = path.resolve(baseDir, "out", "sessions");
+        if (fs.existsSync(sessionsBase)) {
+          try {
+            const sFolders = fs.readdirSync(sessionsBase);
+            for (const sf of sFolders.reverse()) {
+              const candidate = path.resolve(sessionsBase, sf, targetCaso, "paquete", "checklist.md");
+              if (fs.existsSync(candidate)) {
+                checklistPath = candidate;
+                break;
+              }
+            }
+          } catch {
+            // Ignorar error de lectura
+          }
+        }
+      }
+
+      let isBlocked = false;
       if (fs.existsSync(checklistPath)) {
         const content = fs.readFileSync(checklistPath, "utf-8");
         if (content.includes("¿Listo para firma?: NO") || content.includes("BLOQUEADO")) {
-          return c.json({
-            ok: false,
-            error: `No se puede autorizar el envío: el paquete del caso '${targetCaso}' tiene la firma bloqueada debido a soportes vencidos o ausentes.`
-          }, 400);
+          isBlocked = true;
         }
+      } else {
+        // Si no hay paquete armado en disco, evaluar directamente los soportes del caso
+        try {
+          const fixtureService = new FixtureService(baseDir);
+          const supportService = new SupportService(fixtureService);
+          const soportesExigidos = fixtureService.getSoportesExigidos(targetCaso);
+          const evaluacion = supportService.evaluarSoportes(soportesExigidos, new Date());
+          if (!evaluacion.listoParaFirma) {
+            isBlocked = true;
+          }
+        } catch {
+          // Caso de prueba sin fixtures asociados
+        }
+      }
+
+      if (isBlocked) {
+        return c.json({
+          ok: false,
+          error: `No se puede autorizar el envío: el paquete del caso '${targetCaso}' tiene la firma bloqueada debido a soportes vencidos o ausentes.`
+        }, 400);
       }
     }
 
