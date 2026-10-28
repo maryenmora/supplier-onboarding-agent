@@ -183,9 +183,9 @@ export class AgentEngine {
   public async processMessage(
     sessionId: string | undefined,
     userMessage: string,
-    options?: { referenceDate?: Date }
+    options?: { referenceDate?: Date; visitorId?: string }
   ): Promise<AgentProcessResult> {
-    const session = this.sessionManager.getOrCreate(sessionId);
+    const session = this.sessionManager.getOrCreate(sessionId, options?.visitorId);
     const referenceDate = options?.referenceDate || new Date();
 
     // Detección automática en lenguaje natural de confirmación humana explícita
@@ -194,7 +194,9 @@ export class AgentEngine {
 
     if (esConfirmacionTexto && session.pendingConfirmation?.status === "pending") {
       const caso = session.pendingConfirmation.caso;
-      const checklistPath = path.resolve(this.baseDir, "out", caso, "paquete", "checklist.md");
+      const sessionChecklistPath = path.resolve(this.baseDir, "out", "sessions", session.id, caso, "paquete", "checklist.md");
+      const globalChecklistPath = path.resolve(this.baseDir, "out", caso, "paquete", "checklist.md");
+      const checklistPath = fs.existsSync(sessionChecklistPath) ? sessionChecklistPath : globalChecklistPath;
       let isBlocked = false;
       if (fs.existsSync(checklistPath)) {
         const content = fs.readFileSync(checklistPath, "utf-8");

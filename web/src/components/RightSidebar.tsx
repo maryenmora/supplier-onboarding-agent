@@ -5,6 +5,7 @@ import { ToolExecutionRecord, getArtifactDownloadUrl } from "../services/api.js"
 interface RightSidebarProps {
   toolCalls: ToolExecutionRecord[];
   activeCase: string | null;
+  sessionId?: string | null;
   isOpenMobile: boolean;
   onCloseMobile: () => void;
 }
@@ -12,6 +13,7 @@ interface RightSidebarProps {
 export const RightSidebar: React.FC<RightSidebarProps> = ({
   toolCalls,
   activeCase,
+  sessionId,
   isOpenMobile,
   onCloseMobile
 }) => {
@@ -213,7 +215,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
               <div className="space-y-1.5">
                 {dataLeer?.formato === "xlsx" && (
                   <a
-                    href={getArtifactDownloadUrl(currentCase, "formulario.xlsx")}
+                    href={getArtifactDownloadUrl(currentCase, "formulario.xlsx", sessionId || undefined)}
                     download="formulario.xlsx"
                     className="flex items-center justify-between p-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors text-xs text-slate-700 group cursor-pointer"
                   >
@@ -227,7 +229,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
 
                 {dataLeer?.formato === "pdf" && (
                   <a
-                    href={getArtifactDownloadUrl(currentCase, "formulario.pdf")}
+                    href={getArtifactDownloadUrl(currentCase, "formulario.pdf", sessionId || undefined)}
                     download="formulario.pdf"
                     className="flex items-center justify-between p-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors text-xs text-slate-700 group cursor-pointer"
                   >
@@ -241,7 +243,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
 
                 {dataLeer?.formato === "portal" && (
                   <a
-                    href={getArtifactDownloadUrl(currentCase, "valores-portal.md")}
+                    href={getArtifactDownloadUrl(currentCase, "valores-portal.md", sessionId || undefined)}
                     download="valores-portal.md"
                     className="flex items-center justify-between p-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors text-xs text-slate-700 group cursor-pointer"
                   >
@@ -254,7 +256,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                 )}
 
                 <a
-                  href={getArtifactDownloadUrl(currentCase, "checklist.md")}
+                  href={getArtifactDownloadUrl(currentCase, "checklist.md", sessionId || undefined)}
                   download="checklist.md"
                   className="flex items-center justify-between p-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors text-xs text-slate-700 group cursor-pointer"
                 >
@@ -266,7 +268,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                 </a>
 
                 <a
-                  href={getArtifactDownloadUrl(currentCase, "borrador-correo.md")}
+                  href={getArtifactDownloadUrl(currentCase, "borrador-correo.md", sessionId || undefined)}
                   download="borrador-correo.md"
                   className="flex items-center justify-between p-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors text-xs text-slate-700 group cursor-pointer"
                 >
@@ -279,7 +281,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
 
                 {dataEnvio && (
                   <a
-                    href={getArtifactDownloadUrl(currentCase, "ENVIO-SIMULADO.md")}
+                    href={getArtifactDownloadUrl(currentCase, "ENVIO-SIMULADO.md", sessionId || undefined)}
                     download="ENVIO-SIMULADO.md"
                     className="flex items-center justify-between p-2 rounded-lg border border-emerald-300 bg-emerald-50/50 hover:bg-emerald-100/50 transition-colors text-xs text-emerald-800 group cursor-pointer"
                   >

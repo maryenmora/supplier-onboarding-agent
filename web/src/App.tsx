@@ -244,6 +244,7 @@ export const App: React.FC = () => {
       <RightSidebar
         toolCalls={allToolCalls}
         activeCase={activeCase}
+        sessionId={currentSessionId}
         isOpenMobile={rightMobileOpen}
         onCloseMobile={() => setRightMobileOpen(false)}
       />

@@ -16,13 +16,14 @@
 | **Fase 3.1**| **Validación E2E en Navegador Real** | **COMPLETADO Y PROBADO** | Playwright Chrome (9 evidencias, 0 errores) | [`docs/FASE_03_1_VALIDACION_E2E.md`](file:///c:/Proyectos/periferia/capacitación-perxia\dia5/docs/FASE_03_1_VALIDACION_E2E.md) |
 | **Fase 3.2**| **Correcciones de Consistencia, Seguridad y UX** | **COMPLETADO Y PROBADO** | 37 tests unitarios + Playwright E2E verificado | [`docs/FASE_03_2_CORRECCIONES.md`](file:///c:/Proyectos/periferia/capacitación-perxia\dia5/docs/FASE_03_2_CORRECCIONES.md) |
 | **Fase 4** | **Bonus Módulo Reutilizable y Documentación Final** | **COMPLETADO Y PROBADO** | Playwright E2E (10 evidencias) + 37 tests unitarios | [`docs/FASE_04_ENTREGA.md`](file:///c:/Proyectos/periferia/capacitación-perxia\dia5/docs/FASE_04_ENTREGA.md) |
-| **Fase 5** | **Auditoría Prepublicación y Despliegue Render** | **COMPLETADO Y PROBADO** | 39 tests unitarios + Playwright + Build OK + render.yaml | [`docs/FASE_05_PREPUBLICACION.md`](file:///c:/Proyectos/periferia/capacitación-perxia\dia5/docs/FASE_05_PREPUBLICACION.md) |
+| **Fase 5** | **Auditoría Prepublicación y Despliegue Render** | **COMPLETADO Y PROBADO** | 44 tests unitarios + Playwright (2 navegadores) + Build OK | [`docs/VALIDACION_FINAL_PUBLICACION.md`](file:///c:/Proyectos/periferia/capacitación-perxia\dia5/docs/VALIDACION_FINAL_PUBLICACION.md) |
 
 ---
 
 ## 2. Clasificación Exhaustiva de Requisitos del Sistema
 
 ### 2.1 PROBADO EN NAVEGADOR REAL (PLAYWRIGHT + GOOGLE CHROME HEADLESS)
+- [x] **Aislamiento Multi-Navegador E2E:** Dos contextos de navegador independientes (Visitante A vs Visitante B) ejecutados simultáneamente; 0 cruces de sesión detectados y rechazo HTTP 403 al intentar acceder a sesiones ajenas.
 - [x] **Cero `Invalid Date`:** Formateador seguro `formatSafeTime` verificado en todo el DOM del chat y sesiones (0 ocurrencias).
 - [x] **Consistencia de Confirmación Humana:** Sincronización verificada entre panel derecho y banner en captura `08_confirmacion_humana.png` (Colombia en ambos componentes para caso elegible).
 - [x] **Protección de Envíos en Paquetes Bloqueados:** Si la documentación presenta soportes vencidos o ausentes, el banner conmuta a alerta roja y el botón de simulación se deshabilita operativamente (*"Envío Inhabilitado (Firma Bloqueada)"*, Evidencia `08a`).
@@ -43,7 +44,8 @@
 - [x] **Cero consumo extra en Fases 3.2, 4 y 5:** Conforme a la regla obligatoria de control de costos, no se realizaron llamadas adicionales a Gemini en estas fases.
 
 ### 2.3 PROBADO CON MOCK
-- [x] **Suite de 39 pruebas unitarias e integración:** Aprobadas en 3.8s con cero consumo de tokens.
+- [x] **Suite de 44 pruebas unitarias e integración:** Aprobadas en 2.7s con cero consumo de tokens.
+- [x] **Seguridad de Acceso y Aislamiento (`visitor-isolation.test.ts`):** 5 pruebas que verifican: 1) Aislamiento estricto de sesiones entre visitantes (listados disjuntos y 403 en acceso ajeno); 2) Aislamiento físico de carpetas en `out/sessions/<id>/`; 3) Rate limiting (429); 4) Presupuesto global acumulado de tokens (429); 5) Protección opcional con clave de demostración (`DEMO_ACCESS_KEY` -> 401).
 - [x] **Pruebas de formateo de fecha (`date-formatting.test.ts`):** Cobertura de entradas corruptas, nulas, fechas inválidas y preformateadas.
 - [x] **Auditoría de campos faltantes (`missing-fields-audit.test.ts`):** Comprobación por etiqueta exacta en los 4 casos del PRD.
 - [x] **Seguridad de confirmaciones (`security-confirmations.test.ts`):** Bloqueo de confirmación cruzada, tokens expirados y rechazo HTTP 400 de paquetes bloqueados.
@@ -108,7 +110,8 @@
    - [`docs/FASE_03_2_CORRECCIONES.md`](file:///c:/Proyectos/periferia/capacitación-perxia\dia5/docs/FASE_03_2_CORRECCIONES.md)
    - [`docs/FASE_04_ENTREGA.md`](file:///c:/Proyectos/periferia/capacitación-perxia\dia5/docs/FASE_04_ENTREGA.md)
    - [`docs/FASE_05_PREPUBLICACION.md`](file:///c:/Proyectos/periferia/capacitación-perxia\dia5/docs/FASE_05_PREPUBLICACION.md)
+   - [`docs/VALIDACION_FINAL_PUBLICACION.md`](file:///c:/Proyectos/periferia/capacitación-perxia\dia5/docs/VALIDACION_FINAL_PUBLICACION.md)
 6. **Evidencias Gráficas E2E:** 10 capturas de pantalla en `docs/evidencias/`.
-7. **Suite de Pruebas Automatizadas:** 39 pruebas unitarias e integración en `test/*.test.ts`, validación Playwright en `test/e2e/browser-validation.ts`.
+7. **Suite de Pruebas Automatizadas:** 44 pruebas unitarias e integración en `test/*.test.ts`, validación Playwright con aislamiento de dos navegadores en `test/e2e/browser-validation.ts`.
 8. **Script Determinista CLI:** `demo.ts`.
-9. **Configuración de Seguridad y Despliegue Cloud:** `.gitignore` (exclusión estricta de `.env`, `node_modules/`, `out/`), `.env.example` y `render.yaml` (Blueprint declarativo).
+9. **Configuración de Seguridad y Despliegue Cloud:** `.gitignore` (exclusión estricta de `.env`, `node_modules/`, `out/`), `.env.example`, `render.yaml` (Blueprint declarativo) y servicio de blindaje `src/core/guard.ts`.

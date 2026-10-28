@@ -257,3 +257,4 @@ $ npm run test:e2e
 3. **Compatibilidad Cloud:** La configuración declarativa en `render.yaml` y la unificación de scripts permiten un despliegue sin fricciones en Render bajo Node.js 20+.
 4. **Transparencia y Rigor:** La documentación de costos, consumo de tokens y evaluación se encuentra completamente alineada con la realidad observada y sustentada matemáticamente.
 5. **Gobernanza:** Todos los secretos permanecen resguardados exclusivamente en variables de entorno locales, y el control de versiones está en estado óptimo a la espera de la autorización final del usuario para el primer commit y posterior publicación.
+

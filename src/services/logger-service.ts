@@ -23,16 +23,30 @@ export function sanitizeLogText(text: string): string {
 
 /**
  * Escribe una entrada estructurada en out/<caso>/log.jsonl (RN5)
+ * Protege contra Path Traversal sanitizando el identificador y asegurando contención en out/
  */
 export async function logExecution(
   baseDir: string,
   caso: string,
   herramienta: string,
   ok: boolean,
-  resumen: string
+  resumen: string,
+  sessionId?: string
 ): Promise<void> {
   try {
-    const casoDir = path.resolve(baseDir, "out", caso);
+    const safeCaso = caso.replace(/[^a-zA-Z0-9_-]/g, "_") || "desconocido";
+    const outDir = path.resolve(baseDir, "out");
+
+    // Aislamiento por sesión si está disponible
+    const safeSession = sessionId ? sessionId.replace(/[^a-zA-Z0-9_-]/g, "_") : null;
+    const casoDir = safeSession
+      ? path.join(outDir, "sessions", safeSession, safeCaso)
+      : path.join(outDir, safeCaso);
+
+    if (!casoDir.startsWith(outDir)) {
+      return;
+    }
+
     if (!fs.existsSync(casoDir)) {
       fs.mkdirSync(casoDir, { recursive: true });
     }

@@ -24,13 +24,15 @@ export class Session {
   public readonly id: string;
   public readonly createdAt: Date;
   public updatedAt: Date;
+  public visitorId?: string;
   public messages: LlmMessage[] = [];
   public toolCallsHistory: ToolExecutionRecord[] = [];
   public pendingConfirmation: PendingConfirmation | null = null;
   public totalTokens: TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
 
-  constructor(id?: string) {
+  constructor(id?: string, visitorId?: string) {
     this.id = id || `sess_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`;
+    this.visitorId = visitorId;
     this.createdAt = new Date();
     this.updatedAt = new Date();
   }
@@ -125,25 +127,79 @@ export class Session {
 
 export class SessionManager {
   private sessions = new Map<string, Session>();
+  private readonly maxGlobalSessions: number;
+  private readonly maxSessionsPerVisitor: number;
 
-  public getOrCreate(id?: string): Session {
+  constructor(options?: { maxGlobalSessions?: number; maxSessionsPerVisitor?: number }) {
+    this.maxGlobalSessions = options?.maxGlobalSessions || Number(process.env.MAX_GLOBAL_SESSIONS || 100);
+    this.maxSessionsPerVisitor = options?.maxSessionsPerVisitor || Number(process.env.MAX_SESSIONS_PER_VISITOR || 10);
+  }
+
+  public getOrCreate(id?: string, visitorId?: string): Session {
     if (id && this.sessions.has(id)) {
-      return this.sessions.get(id)!;
+      const existing = this.sessions.get(id)!;
+      // Si la sesión ya tiene un visitorId asignado y se proporciona uno diferente, impedir usurpación
+      if (existing.visitorId && visitorId && existing.visitorId !== visitorId) {
+        throw new Error("Acceso denegado: la sesión pertenece a otro visitante");
+      }
+      if (!existing.visitorId && visitorId) {
+        existing.visitorId = visitorId;
+      }
+      return existing;
     }
-    const session = new Session(id);
+
+    // Control de límite de sesiones por visitante (evict oldest)
+    if (visitorId) {
+      const visitorSessions = Array.from(this.sessions.values())
+        .filter((s) => s.visitorId === visitorId)
+        .sort((a, b) => a.updatedAt.getTime() - b.updatedAt.getTime());
+
+      while (visitorSessions.length >= this.maxSessionsPerVisitor) {
+        const oldest = visitorSessions.shift();
+        if (oldest) {
+          this.sessions.delete(oldest.id);
+        }
+      }
+    }
+
+    // Control de límite global de sesiones (evict oldest)
+    if (this.sessions.size >= this.maxGlobalSessions) {
+      const oldestSession = Array.from(this.sessions.values())
+        .sort((a, b) => a.updatedAt.getTime() - b.updatedAt.getTime())[0];
+      if (oldestSession) {
+        this.sessions.delete(oldestSession.id);
+      }
+    }
+
+    const session = new Session(id, visitorId);
     this.sessions.set(session.id, session);
     return session;
   }
 
-  public get(id: string): Session | undefined {
-    return this.sessions.get(id);
+  public get(id: string, visitorId?: string): Session | undefined {
+    const session = this.sessions.get(id);
+    if (!session) return undefined;
+    // Si se consulta con un visitorId específico, comprobar propiedad
+    if (visitorId && session.visitorId && session.visitorId !== visitorId) {
+      return undefined;
+    }
+    return session;
   }
 
-  public list(): Session[] {
-    return Array.from(this.sessions.values());
+  public list(visitorId?: string): Session[] {
+    const all = Array.from(this.sessions.values());
+    if (visitorId) {
+      return all.filter((s) => s.visitorId === visitorId);
+    }
+    return all;
   }
 
-  public delete(id: string): boolean {
+  public delete(id: string, visitorId?: string): boolean {
+    const session = this.sessions.get(id);
+    if (!session) return false;
+    if (visitorId && session.visitorId && session.visitorId !== visitorId) {
+      return false;
+    }
     return this.sessions.delete(id);
   }
 

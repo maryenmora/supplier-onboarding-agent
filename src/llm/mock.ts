@@ -70,7 +70,7 @@ export class MockAdapter implements LlmAdapter {
       const toolName = lastMsg.toolName;
 
       // Extraer el caso y la intención a partir del mensaje más reciente del usuario
-      const lastUserMsg = [...mensajes].reverse().find((m) => m.role === "user")?.content || "";
+      const lastUserMsg = ([...mensajes].reverse().find((m) => m.role === "user")?.content || "").toLowerCase();
       const isFullFlowRequested =
         lastUserMsg.includes("paquete") ||
         lastUserMsg.includes("formulario") ||

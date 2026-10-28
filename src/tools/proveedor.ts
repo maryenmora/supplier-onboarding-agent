@@ -143,14 +143,14 @@ export const generar_formulario = {
       if (solicitud.formato === "xlsx") {
         const casoDir = fixtureService.getCasoDir(args.caso);
         const celdasRaw = JSON.parse(fs.readFileSync(path.join(casoDir, "plantilla-celdas.json"), "utf-8")) as PlantillaCeldaItem[];
-        rutaGenerada = await excelGen.generarExcel(baseDir, args.caso, celdasRaw, valoresMap);
+        rutaGenerada = await excelGen.generarExcel(baseDir, args.caso, celdasRaw, valoresMap, ctx.sessionId);
       } else if (solicitud.formato === "pdf") {
         const casoDir = fixtureService.getCasoDir(args.caso);
         const camposRaw = JSON.parse(fs.readFileSync(path.join(casoDir, "plantilla-campos.json"), "utf-8")) as PlantillaCampoItem[];
-        rutaGenerada = await pdfGen.generarPdf(baseDir, args.caso, camposRaw, valoresMap, solicitud.cliente);
+        rutaGenerada = await pdfGen.generarPdf(baseDir, args.caso, camposRaw, valoresMap, solicitud.cliente, ctx.sessionId);
       } else if (solicitud.formato === "portal") {
         const campos = fixtureService.getCamposSolicitados(args.caso, "portal");
-        rutaGenerada = portalGen.generarValoresPortal(baseDir, args.caso, campos, valoresMap, solicitud.cliente);
+        rutaGenerada = portalGen.generarValoresPortal(baseDir, args.caso, campos, valoresMap, solicitud.cliente, ctx.sessionId);
       }
 
       const relativeRuta = path.relative(baseDir, rutaGenerada).replace(/\\/g, "/");
@@ -160,7 +160,8 @@ export const generar_formulario = {
         args.caso,
         "proveedor_generar_formulario",
         true,
-        `Formulario generado en ${relativeRuta} (formato: ${solicitud.formato})`
+        `Formulario generado en ${relativeRuta} (formato: ${solicitud.formato})`,
+        ctx.sessionId
       );
 
       return JSON.stringify({
@@ -215,7 +216,8 @@ export const armar_paquete = {
         solicitud,
         evaluacion,
         mapeo.faltantes,
-        referenceDate
+        referenceDate,
+        ctx.sessionId
       );
 
       const relativePaquete = path.relative(baseDir, resultadoPaquete.paqueteDir).replace(/\\/g, "/");
@@ -226,7 +228,8 @@ export const armar_paquete = {
         args.caso,
         "proveedor_armar_paquete",
         true,
-        `Paquete armado en ${relativePaquete}. Listo para firma: ${evaluacion.listoParaFirma ? "SÍ" : "NO (BLOQUEADO)"}. Soportes vencidos: ${evaluacion.soportesVencidos.length}, ausentes: ${evaluacion.soportesAusentes.length}`
+        `Paquete armado en ${relativePaquete}. Listo para firma: ${evaluacion.listoParaFirma ? "SÍ" : "NO (BLOQUEADO)"}. Soportes vencidos: ${evaluacion.soportesVencidos.length}, ausentes: ${evaluacion.soportesAusentes.length}`,
+        ctx.sessionId
       );
 
       return JSON.stringify({
@@ -296,8 +299,18 @@ export const simular_envio = {
         return JSON.stringify({ ok: false, error: errorMsg });
       }
 
-      // Generar archivo ENVIO-SIMULADO.md
-      const casoDir = path.resolve(baseDir, "out", args.caso);
+      // Generar archivo ENVIO-SIMULADO.md con aislamiento de sesión
+      const safeCaso = args.caso.replace(/[^a-zA-Z0-9_-]/g, "_") || "desconocido";
+      const safeSession = ctx.sessionId ? ctx.sessionId.replace(/[^a-zA-Z0-9_-]/g, "_") : null;
+      const outDir = path.resolve(baseDir, "out");
+      const casoDir = safeSession
+        ? path.join(outDir, "sessions", safeSession, safeCaso)
+        : path.join(outDir, safeCaso);
+
+      if (!casoDir.startsWith(outDir)) {
+        throw new Error("Ruta de salida no autorizada");
+      }
+
       if (!fs.existsSync(casoDir)) {
         fs.mkdirSync(casoDir, { recursive: true });
       }
@@ -337,7 +350,8 @@ export const simular_envio = {
         args.caso,
         "proveedor_simular_envio",
         true,
-        `Envío simulado exitoso a ${solicitud.de} en ${relativeRuta}`
+        `Envío simulado exitoso a ${solicitud.de} en ${relativeRuta}`,
+        ctx.sessionId
       );
 
       return JSON.stringify({

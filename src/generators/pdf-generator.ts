@@ -13,9 +13,20 @@ export class PdfGenerator {
     caso: string,
     plantillaCampos: PlantillaCampoItem[],
     valoresMapeados: Map<string, string | number | boolean>,
-    clienteNombre: string
+    clienteNombre: string,
+    sessionId?: string
   ): Promise<string> {
-    const casoDir = path.resolve(baseDir, "out", caso);
+    const safeCaso = caso.replace(/[^a-zA-Z0-9_-]/g, "_") || "desconocido";
+    const safeSession = sessionId ? sessionId.replace(/[^a-zA-Z0-9_-]/g, "_") : null;
+    const outDir = path.resolve(baseDir, "out");
+    const casoDir = safeSession
+      ? path.join(outDir, "sessions", safeSession, safeCaso)
+      : path.join(outDir, safeCaso);
+
+    if (!casoDir.startsWith(outDir)) {
+      throw new Error("Ruta de salida no autorizada");
+    }
+
     if (!fs.existsSync(casoDir)) {
       fs.mkdirSync(casoDir, { recursive: true });
     }

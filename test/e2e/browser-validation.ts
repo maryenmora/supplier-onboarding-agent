@@ -348,9 +348,64 @@ async function runBrowserValidation() {
     await page.setViewportSize({ width: 1440, height: 900 });
 
     // -------------------------------------------------------------------------
-    // TEST 9: Verificación de Evidencias Live Gemini vs Mock (Sin consumo adicional)
+    // TEST 9: Dos navegadores independientes - Validación de Aislamiento de Visitantes
     // -------------------------------------------------------------------------
-    console.log("\n[12] Verificación de Evidencias Live Gemini vs Mock...");
+    console.log("[12] Validando aislamiento entre dos navegadores independientes (Visitante A vs Visitante B)...");
+
+    const contextB = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const pageB = await contextB.newPage();
+
+    // Navegar en contexto B
+    await pageB.goto(BASE_URL, { waitUntil: "networkidle" });
+
+    // Visitante B envía un mensaje en su contexto independiente
+    await Promise.all([
+      pageB.waitForResponse((resp) => resp.url().includes("/api/chat") && resp.status() === 200),
+      pageB.fill("textarea", "Hola desde sesión Visitante B").then(() => pageB.keyboard.press("Enter"))
+    ]);
+    await pageB.waitForTimeout(500);
+
+    // Obtener las sesiones visibles para Visitante B
+    const sessionsBResponse = await pageB.evaluate(async () => {
+      const res = await fetch("/api/sessions", {
+        headers: { "x-visitor-id": localStorage.getItem("perxia_visitor_id") || "" }
+      });
+      return res.json();
+    });
+
+    // Obtener las sesiones visibles para Visitante A
+    const sessionsAResponse = await page.evaluate(async () => {
+      const res = await fetch("/api/sessions", {
+        headers: { "x-visitor-id": localStorage.getItem("perxia_visitor_id") || "" }
+      });
+      return res.json();
+    });
+
+    const idsA = (sessionsAResponse.data || []).map((s: { id: string }) => s.id);
+    const idsB = (sessionsBResponse.data || []).map((s: { id: string }) => s.id);
+
+    const intersection = idsA.filter((id: string) => idsB.includes(id));
+    assert.equal(intersection.length, 0, "No debe haber cruce de sesiones entre Visitante A y Visitante B");
+    console.log("  ✓ Verificación de aislamiento en navegador: 0 cruces de sesión detectados");
+
+    // Visitante B intenta acceder directamente a una sesión de Visitante A
+    if (idsA.length > 0) {
+      const hijackAttempt = await pageB.evaluate(async (targetId) => {
+        const res = await fetch(`/api/sessions/${targetId}`, {
+          headers: { "x-visitor-id": localStorage.getItem("perxia_visitor_id") || "" }
+        });
+        return { status: res.status };
+      }, idsA[0]);
+      assert.equal(hijackAttempt.status, 403, "Visitante B debe recibir 403 Forbidden al intentar acceder a sesión de Visitante A");
+      console.log("  ✓ Intento de acceso ajeno desde navegador B rechazado con HTTP 403");
+    }
+
+    await contextB.close();
+
+    // -------------------------------------------------------------------------
+    // TEST 10: Verificación de Evidencias Live Gemini vs Mock (Sin consumo adicional)
+    // -------------------------------------------------------------------------
+    console.log("\n[13] Verificación de Evidencias Live Gemini vs Mock...");
     if (process.env.RUN_LIVE === "true") {
       const apiKey = process.env.GEMINI_API_KEY;
       if (apiKey) {

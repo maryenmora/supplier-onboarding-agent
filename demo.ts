@@ -28,6 +28,7 @@ interface ResumenCaso {
   soportesAusentes: number;
   listoParaFirma: boolean;
   rutaFormulario: string;
+  rutaPaquete: string;
 }
 
 async function runDemo(): Promise<void> {
@@ -136,7 +137,8 @@ async function runDemo(): Promise<void> {
       soportesVencidos: dataPaquete.checklist.soportes_vencidos.length,
       soportesAusentes: dataPaquete.checklist.soportes_ausentes.length,
       listoParaFirma: listoFirma,
-      rutaFormulario: resGen.data.ruta
+      rutaFormulario: resGen.data.ruta,
+      rutaPaquete: dataPaquete.ruta
     });
   }
 
@@ -164,10 +166,10 @@ async function runDemo(): Promise<void> {
   console.log("\n📁 Verificando artefactos físicos generados en disco:");
   for (const r of tablaResumen) {
     const fullFormPath = path.join(rootDir, r.rutaFormulario);
-    const casoPaquete = path.join(rootDir, "out", r.caso, "paquete");
+    const casoPaquete = path.join(rootDir, r.rutaPaquete);
     const checklistPath = path.join(casoPaquete, "checklist.md");
     const borradorPath = path.join(casoPaquete, "borrador-correo.md");
-    const logPath = path.join(rootDir, "out", r.caso, "log.jsonl");
+    const logPath = path.join(path.dirname(casoPaquete), "log.jsonl");
 
     if (!fs.existsSync(fullFormPath)) throw new Error(`No existe ${fullFormPath}`);
     if (!fs.existsSync(checklistPath)) throw new Error(`No existe ${checklistPath}`);
