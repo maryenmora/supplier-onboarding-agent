@@ -198,8 +198,12 @@ async function runBrowserValidation() {
       headers: { "x-visitor-id": browserVisitorId }
     });
     const sessionsList = (await sessionsRes.json()).data;
-    const activeSession = sessionsList[0];
-    assert.ok(activeSession?.id && activeSession?.sessionToken, "Debe existir una sesión activa con token en el navegador");
+    const activeSessionSummary = sessionsList[0];
+    assert.ok(activeSessionSummary?.id, "Debe existir una sesión activa en el navegador");
+    assert.equal(activeSessionSummary.sessionToken, undefined, "GET /api/sessions NUNCA debe filtrar sessionToken");
+
+    const activeSession = sessionManager.get(activeSessionSummary.id)!;
+    assert.ok(activeSession && activeSession.sessionToken, "Debe existir la sesión en el servidor con su token");
 
     const filesToTest = [
       { caso: "co-industrias-delta", file: "formulario.xlsx", minSize: 5000, type: "spreadsheetml" },
@@ -210,16 +214,25 @@ async function runBrowserValidation() {
       { caso: "co-industrias-delta", file: "borrador-correo.md", minSize: 500, type: "text/markdown" }
     ];
 
-    // Prueba negativa previa: Descargar sin sesión o sin token
+    // Prueba negativa previa: Descargar sin sesión o sin token en cabecera
     const testNeg1 = await fetch(`${BASE_URL}/api/artifacts/co-industrias-delta/formulario.xlsx`);
     assert.equal(testNeg1.status, 400, "Descarga sin sesión debe retornar 400");
     const testNeg2 = await fetch(`${BASE_URL}/api/artifacts/co-industrias-delta/formulario.xlsx?sessionId=${activeSession.id}`);
     assert.equal(testNeg2.status, 401, "Descarga sin token de sesión debe retornar 401");
 
+    // Prueba negativa: Token transmitido en query parameter DEBE ser rechazado con 401
+    const testNegTokenInUrl = await fetch(`${BASE_URL}/api/artifacts/co-industrias-delta/formulario.xlsx?sessionId=${activeSession.id}&token=${activeSession.sessionToken}`);
+    assert.equal(testNegTokenInUrl.status, 401, "Descarga con token en query parameter debe ser rechazada con 401");
+    console.log("  ✓ Tokens en URL query parameters rechazados con HTTP 401");
+
     for (const item of filesToTest) {
-      const downloadUrl = `${BASE_URL}/api/artifacts/${item.caso}/${item.file}?sessionId=${activeSession.id}&token=${activeSession.sessionToken}`;
-      const res = await fetch(downloadUrl, {
-        headers: { "x-visitor-id": browserVisitorId }
+      // Descarga autorizada vía cabecera x-session-token (sin tokens en URL)
+      const downloadUrl: string = `${BASE_URL}/api/artifacts/${item.caso}/${item.file}?sessionId=${activeSession.id}`;
+      const res: Response = await fetch(downloadUrl, {
+        headers: {
+          "x-visitor-id": browserVisitorId,
+          "x-session-token": activeSession.sessionToken
+        }
       });
       assert.equal(res.status, 200, `Descarga autorizada de ${item.file} debe responder 200`);
       const contentType = res.headers.get("content-type") || "";
@@ -413,8 +426,8 @@ async function runBrowserValidation() {
         });
         return { status: res.status };
       }, idsA[0]);
-      assert.equal(hijackAttempt.status, 403, "Visitante B debe recibir 403 Forbidden al intentar acceder a sesión de Visitante A");
-      console.log("  ✓ Intento de acceso ajeno desde navegador B rechazado con HTTP 403");
+      assert.ok(hijackAttempt.status === 401 || hijackAttempt.status === 403, "Visitante B debe recibir 401 Unauthorized o 403 Forbidden al intentar acceder a sesión de Visitante A");
+      console.log(`  ✓ Intento de acceso ajeno desde navegador B rechazado con HTTP ${hijackAttempt.status}`);
 
       // Visitante B intenta descargar un artefacto de la sesión de Visitante A sin credencial de propietario
       const hijackArtifact = await pageB.evaluate(async (targetId) => {

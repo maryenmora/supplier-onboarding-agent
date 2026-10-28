@@ -61,7 +61,7 @@ export interface SessionSummary {
 
 const API_BASE = "";
 
-// 1. Manejo de Visitor ID
+// 1. Manejo de Visitor ID y Token Criptográfico de Visitante
 export function getVisitorId(): string {
   try {
     let id = localStorage.getItem("perxia_visitor_id");
@@ -72,6 +72,23 @@ export function getVisitorId(): string {
     return id;
   } catch {
     return "vis_default";
+  }
+}
+
+export function getVisitorToken(): string | null {
+  try {
+    return sessionStorage.getItem("perxia_visitor_token") || localStorage.getItem("perxia_visitor_token");
+  } catch {
+    return null;
+  }
+}
+
+export function storeVisitorToken(token: string): void {
+  try {
+    sessionStorage.setItem("perxia_visitor_token", token);
+    localStorage.setItem("perxia_visitor_token", token);
+  } catch {
+    // Entornos sin storage
   }
 }
 
@@ -137,6 +154,10 @@ export function getAuthHeaders(sessionId?: string): Record<string, string> {
   const headers: Record<string, string> = {
     "x-visitor-id": getVisitorId()
   };
+  const vToken = getVisitorToken();
+  if (vToken) {
+    headers["x-visitor-token"] = vToken;
+  }
   const demoKey = getDemoKey();
   if (demoKey) {
     headers["x-demo-key"] = demoKey;
@@ -173,6 +194,9 @@ export async function sendChatMessage(message: string, sessionId?: string, refer
   if (!json.ok) {
     throw new Error(json.error || "Error al procesar el mensaje");
   }
+  if (json.data?.visitorToken) {
+    storeVisitorToken(json.data.visitorToken);
+  }
   if (json.data?.sessionId && json.data?.sessionToken) {
     storeSessionToken(json.data.sessionId, json.data.sessionToken);
   }
@@ -188,13 +212,7 @@ export async function fetchSessions(): Promise<SessionSummary[]> {
   }
   if (!res.ok) throw new Error("Error consultando sesiones");
   const json = await res.json();
-  const list = json.data || [];
-  for (const s of list) {
-    if (s.id && s.sessionToken) {
-      storeSessionToken(s.id, s.sessionToken);
-    }
-  }
-  return list;
+  return json.data || [];
 }
 
 export async function fetchSessionDetail(id: string) {
@@ -202,13 +220,10 @@ export async function fetchSessionDetail(id: string) {
     headers: getAuthHeaders(id)
   });
   if (res.status === 401) {
-    throw new Error("401 Unauthorized: Clave de acceso requerida");
+    throw new Error("401 Unauthorized: Clave de acceso requerida o credencial de sesión inválida");
   }
   if (!res.ok) throw new Error("Error consultando detalle de sesión");
   const json = await res.json();
-  if (json.data?.id && json.data?.sessionToken) {
-    storeSessionToken(json.data.id, json.data.sessionToken);
-  }
   return json.data;
 }
 
@@ -243,16 +258,49 @@ export async function rejectOperation(sessionId: string): Promise<boolean> {
   return json.ok === true;
 }
 
-export function getArtifactDownloadUrl(caso: string, file: string, sessionId?: string, token?: string): string {
+/**
+ * Descarga segura de un artefacto mediante fetch con cabecera x-session-token y Blob en memoria.
+ * NUNCA expone el token de sesión en la URL del navegador ni en query parameters.
+ */
+export async function downloadArtifact(caso: string, file: string, sessionId: string): Promise<void> {
+  const token = getSessionToken(sessionId);
+  const headers: Record<string, string> = {
+    ...getAuthHeaders(sessionId)
+  };
+  if (token) {
+    headers["x-session-token"] = token;
+  }
+
+  const res = await fetch(`${API_BASE}/api/artifacts/${encodeURIComponent(caso)}/${encodeURIComponent(file)}?sessionId=${encodeURIComponent(sessionId)}`, {
+    method: "GET",
+    headers
+  });
+
+  if (!res.ok) {
+    const errJson = await res.json().catch(() => null);
+    throw new Error(errJson?.error || `Error ${res.status} al descargar el archivo ${file}`);
+  }
+
+  const blob = await res.blob();
+  const blobUrl = URL.createObjectURL(blob);
+  const tempLink = document.createElement("a");
+  tempLink.href = blobUrl;
+  tempLink.download = file;
+  tempLink.style.display = "none";
+  document.body.appendChild(tempLink);
+  tempLink.click();
+  document.body.removeChild(tempLink);
+  URL.revokeObjectURL(blobUrl);
+}
+
+/**
+ * URL sanitizada para inspección sin tokens expuestos en parámetros de consulta
+ */
+export function getArtifactDownloadUrl(caso: string, file: string, sessionId?: string): string {
   if (!sessionId) return "#";
   const params = new URLSearchParams();
   params.set("sessionId", sessionId);
-  const resolvedToken = token || getSessionToken(sessionId);
-  if (resolvedToken) {
-    params.set("token", resolvedToken);
-  }
   params.set("visitorId", getVisitorId());
-  const query = params.toString() ? `?${params.toString()}` : "";
-  return `${API_BASE}/api/artifacts/${encodeURIComponent(caso)}/${encodeURIComponent(file)}${query}`;
+  return `${API_BASE}/api/artifacts/${encodeURIComponent(caso)}/${encodeURIComponent(file)}?${params.toString()}`;
 }
 

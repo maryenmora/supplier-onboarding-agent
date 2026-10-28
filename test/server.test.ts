@@ -62,12 +62,19 @@ test("HTTP GET /api/sessions y /api/sessions/:id: Consulta sesiones e historial"
   const listJson = await listRes.json();
   assert.ok(listJson.data.some((s: { id: string }) => s.id === sessionId));
 
-  // Consultar detalle individual
-  const detailRes = await app.request(`/api/sessions/${sessionId}`);
+  // Consultar detalle sin token de sesión -> 401 Unauthorized
+  const unauthRes = await app.request(`/api/sessions/${sessionId}`);
+  assert.equal(unauthRes.status, 401);
+
+  // Consultar detalle individual con cabecera de posesión -> 200 OK
+  const detailRes = await app.request(`/api/sessions/${sessionId}`, {
+    headers: { "x-session-token": chatData.sessionToken }
+  });
   assert.equal(detailRes.status, 200);
   const detailJson = await detailRes.json();
   assert.equal(detailJson.data.id, sessionId);
   assert.ok(detailJson.data.messages.length >= 2);
+  assert.equal(detailJson.data.sessionToken, undefined, "El detalle de sesión NUNCA debe devolver sessionToken");
 });
 
 test("HTTP Confirmación Humana: /confirmation, /confirm y /reject", async () => {
@@ -108,17 +115,27 @@ test("HTTP GET /api/artifacts: Descarga segura y bloqueo de Path Traversal", asy
   fs.mkdirSync(sessArtifactDir, { recursive: true });
   fs.writeFileSync(path.resolve(sessArtifactDir, "formulario.xlsx"), "dummy xlsx content");
 
-  // Descarga válida de un artefacto con sesión y token de propietario
-  const validRes = await app.request(`/api/artifacts/co-industrias-delta/formulario.xlsx?sessionId=${testSession.id}&token=${testSession.sessionToken}`);
+  // Intento de descarga con token en URL query parameter -> 401 Unauthorized
+  const tokenInUrlRes = await app.request(`/api/artifacts/co-industrias-delta/formulario.xlsx?sessionId=${testSession.id}&token=${testSession.sessionToken}`);
+  assert.equal(tokenInUrlRes.status, 401, "Token en query parameter debe ser rechazado con 401");
+
+  // Descarga válida de un artefacto con sesión y token en cabecera HTTP
+  const validRes = await app.request(`/api/artifacts/co-industrias-delta/formulario.xlsx?sessionId=${testSession.id}`, {
+    headers: { "x-session-token": testSession.sessionToken }
+  });
   assert.equal(validRes.status, 200);
   assert.equal(validRes.headers.get("Content-Type"), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
 
   // Descarga de archivo no existente dentro de la sesión
-  const notFoundRes = await app.request(`/api/artifacts/co-industrias-delta/archivo-fantasma.xyz?sessionId=${testSession.id}&token=${testSession.sessionToken}`);
+  const notFoundRes = await app.request(`/api/artifacts/co-industrias-delta/archivo-fantasma.xyz?sessionId=${testSession.id}`, {
+    headers: { "x-session-token": testSession.sessionToken }
+  });
   assert.equal(notFoundRes.status, 404);
 
   // Intento de Path Traversal
-  const traversalRes = await app.request(`/api/artifacts/co-industrias-delta/..%2f..%2fpackage.json?sessionId=${testSession.id}&token=${testSession.sessionToken}`);
+  const traversalRes = await app.request(`/api/artifacts/co-industrias-delta/..%2f..%2fpackage.json?sessionId=${testSession.id}`, {
+    headers: { "x-session-token": testSession.sessionToken }
+  });
   assert.equal(traversalRes.status, 400);
 
   // Intento de descarga sin sesión

@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { serve } from "@hono/node-server";
@@ -45,17 +46,50 @@ export function createServer(options?: {
     maxIterations: Number(process.env.MAX_AGENT_ITERATIONS || 10)
   });
 
-  // Helper para extraer clientIp para rate limiting robusto contra spoofing de visitorId
+  // Clave de firma interna del servidor para emisión de tokens de visitante seguros
+  const SERVER_SIGNING_KEY = process.env.SESSION_SECRET || "perxia_signing_secret_key_2026";
+
+  const signVisitorId = (vid: string): string => {
+    const hmac = crypto.createHmac("sha256", SERVER_SIGNING_KEY).update(vid).digest("hex").slice(0, 16);
+    return `${vid}.${hmac}`;
+  };
+
+  const verifyVisitorId = (tokenOrId?: string): string | null => {
+    if (!tokenOrId || typeof tokenOrId !== "string" || !tokenOrId.includes(".")) return null;
+    const [vid, sig] = tokenOrId.split(".", 2);
+    const expected = crypto.createHmac("sha256", SERVER_SIGNING_KEY).update(vid).digest("hex").slice(0, 16);
+    if (sig.length === expected.length && crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) {
+      return vid;
+    }
+    return null;
+  };
+
+  // Helper para extraer clientIp compatible con proxy reverso de Render (1 hop)
+  // SUPUESTOS DE SEGURIDAD DOCUMENTADOS:
+  // 1. Render opera como proxy reverso confiable de 1 salto frente al contenedor Node.js.
+  // 2. Render añade la IP pública real del cliente al FINAL de la cabecera X-Forwarded-For.
+  // 3. Los valores iniciales en X-Forwarded-For pueden ser inyectados/manipulados arbitrariamente por el cliente.
+  // 4. Por ende, la IP real confiable agregada por Render es la ÚLTIMA entrada válida de X-Forwarded-For.
+  const IP_REGEX = /^(?:(?:\d{1,3}\.){3}\d{1,3}|[a-fA-F0-9:]+)$/;
+
   const extractClientIp = (c: { req: { header: (k: string) => string | undefined } }): string => {
+    // 1. Cabecera Cloudflare / CDN previa
     const cf = c.req.header("cf-connecting-ip");
-    if (cf) return cf.trim();
+    if (cf && IP_REGEX.test(cf.trim())) return cf.trim();
+
+    // 2. Proxy reverso de Render (1 salto confiable): tomar la última IP agregada por el proxy
     const forwarded = c.req.header("x-forwarded-for");
     if (forwarded) {
-      const first = forwarded.split(",")[0].trim();
-      if (first) return first;
+      const parts = forwarded.split(",").map((p) => p.trim()).filter((p) => IP_REGEX.test(p));
+      if (parts.length > 0) {
+        return parts[parts.length - 1];
+      }
     }
+
+    // 3. Fallback a x-real-ip
     const realIp = c.req.header("x-real-ip");
-    if (realIp) return realIp.trim();
+    if (realIp && IP_REGEX.test(realIp.trim())) return realIp.trim();
+
     return "127.0.0.1";
   };
 
@@ -64,18 +98,22 @@ export function createServer(options?: {
     return c.req.header("x-visitor-id") || c.req.query("visitorId") || undefined;
   };
 
-  // Helper para extraer credencial opaca de sesión emitida por el servidor
-  const extractSessionToken = (c: { req: { header: (k: string) => string | undefined; query: (k: string) => string | undefined } }) => {
-    return c.req.header("x-session-token") || c.req.query("token") || c.req.query("sessionToken") || undefined;
-  };
-
-  // Helper para extraer clave de acceso de evaluación
-  const extractDemoKey = (c: { req: { header: (k: string) => string | undefined; query: (k: string) => string | undefined } }) => {
+  // Helper para extraer credencial opaca de sesión emitida por el servidor (NUNCA de URL query parameters)
+  const extractSessionToken = (c: { req: { header: (k: string) => string | undefined } }) => {
     const authHeader = c.req.header("authorization");
     if (authHeader && authHeader.startsWith("Bearer ")) {
       return authHeader.slice(7).trim();
     }
-    return c.req.header("x-demo-key") || c.req.query("key") || undefined;
+    return c.req.header("x-session-token") || undefined;
+  };
+
+  // Helper para extraer clave de acceso de evaluación (NUNCA de URL query parameters)
+  const extractDemoKey = (c: { req: { header: (k: string) => string | undefined } }) => {
+    const authHeader = c.req.header("authorization");
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      return authHeader.slice(7).trim();
+    }
+    return c.req.header("x-demo-key") || undefined;
   };
 
   // Middleware de CORS
@@ -85,6 +123,10 @@ export function createServer(options?: {
   app.use("/api/*", async (c, next) => {
     if (c.req.path === "/api/health") {
       return next(); // Healthcheck siempre público para Render y monitor
+    }
+    // Denegar explícitamente si se envía la clave en URL query parameter (?key= o ?demoKey=)
+    if (c.req.query("key") || c.req.query("demoKey")) {
+      return c.json({ ok: false, error: "Clave de acceso de evaluación requerida o inválida (DEMO_ACCESS_KEY). No se admiten claves en la URL" }, 401);
     }
     if (guard.isKeyRequired()) {
       const key = extractDemoKey(c);
@@ -196,7 +238,9 @@ export function createServer(options?: {
         }
       }
 
+      const signedVid = signVisitorId(visitorId);
       c.header("x-visitor-id", visitorId);
+      c.header("x-visitor-token", signedVid);
       if (result.sessionToken) {
         c.header("x-session-token", result.sessionToken);
       }
@@ -204,7 +248,8 @@ export function createServer(options?: {
         ok: true,
         data: {
           ...result,
-          visitorId
+          visitorId,
+          visitorToken: signedVid
         }
       });
     } catch (err) {
@@ -216,12 +261,21 @@ export function createServer(options?: {
     }
   });
 
-  // 3. GET /api/sessions - Listar sesiones exclusivamente del visitante solicitante
+  // 3. GET /api/sessions - Listar sesiones del visitante verificado (CERO fuga de sessionToken)
   app.get("/api/sessions", (c) => {
-    const visitorId = extractVisitorId(c);
-    const sessions = agentEngine.getSessionManager().list(visitorId).map((s) => ({
+    const rawVisitorToken = c.req.header("x-visitor-token");
+    const rawVisitorId = extractVisitorId(c);
+
+    let targetVisitorId: string | undefined = undefined;
+    if (rawVisitorToken) {
+      targetVisitorId = verifyVisitorId(rawVisitorToken) || undefined;
+    } else if (rawVisitorId) {
+      targetVisitorId = rawVisitorId;
+    }
+
+    const sessions = agentEngine.getSessionManager().list(targetVisitorId).map((s) => ({
       id: s.id,
-      sessionToken: s.sessionToken,
+      // SEGURIDAD: sessionToken NUNCA se expone en el listado de sesiones
       createdAt: s.createdAt,
       updatedAt: s.updatedAt,
       messagesCount: s.messages.length,
@@ -232,25 +286,42 @@ export function createServer(options?: {
     return c.json({ ok: true, data: sessions });
   });
 
-  // 4. GET /api/sessions/:id - Historial completo de sesión (aislado por visitante)
+  // 4. GET /api/sessions/:id - Historial completo de sesión (REQUIERE posesión estricta de sessionToken)
   app.get("/api/sessions/:id", (c) => {
     const id = c.req.param("id");
+    const sessionToken = extractSessionToken(c);
     const visitorId = extractVisitorId(c);
-    const session = agentEngine.getSessionManager().get(id, visitorId);
+
+    // SEGURIDAD: Denegar explícitamente tokens en la URL (query parameters)
+    if (c.req.query("token") || c.req.query("sessionToken")) {
+      return c.json({ ok: false, error: "Acceso denegado: se requiere credencial de sesión en cabecera HTTP (x-session-token). No se admiten tokens en la URL" }, 401);
+    }
+
+    // 1. REGLA ESTRICTA DE SEGURIDAD: Se exige token de posesión en cabecera HTTP
+    if (!sessionToken) {
+      return c.json({ ok: false, error: "Acceso denegado: se requiere credencial de sesión (token de propietario en cabecera x-session-token)" }, 401);
+    }
+
+    const session = agentEngine.getSessionManager().get(id);
     if (!session) {
-      // Verificar si pertenece a otro para emitir 403 vs 404
-      const other = agentEngine.getSessionManager().get(id);
-      if (other) {
-        return c.json({ ok: false, error: "Acceso denegado: la sesión pertenece a otro visitante" }, 403);
-      }
       return c.json({ ok: false, error: `Sesión no encontrada: ${id}` }, 404);
+    }
+
+    // 2. Comprobar validez del token de posesión
+    if (!session.validateToken(sessionToken)) {
+      return c.json({ ok: false, error: "Acceso denegado: credencial de sesión inválida" }, 403);
+    }
+
+    // 3. Comprobar visitorId si coincide
+    if (visitorId && session.visitorId && session.visitorId !== visitorId) {
+      return c.json({ ok: false, error: "Acceso denegado: la sesión pertenece a otro visitante" }, 403);
     }
 
     return c.json({
       ok: true,
       data: {
         id: session.id,
-        sessionToken: session.sessionToken,
+        // SEGURIDAD: CERO fuga de sessionToken en historial
         createdAt: session.createdAt,
         updatedAt: session.updatedAt,
         messages: session.messages,
@@ -440,9 +511,14 @@ export function createServer(options?: {
       return c.json({ ok: false, error: "Se requiere un identificador de sesión válido para descargar artefactos" }, 400);
     }
 
-    // 2. Toda descarga web EXIGE credencial opaca de sesión emitida por el servidor (token de propietario)
+    // 2. SEGURIDAD: Denegar explícitamente si se intenta enviar el token en la URL (?token=)
+    if (c.req.query("token") || c.req.query("sessionToken")) {
+      return c.json({ ok: false, error: "Acceso denegado: se requiere credencial de sesión en cabecera HTTP (x-session-token). No se admiten tokens en la URL" }, 401);
+    }
+
+    // 3. Toda descarga web EXIGE credencial opaca de sesión emitida por el servidor (transmitida únicamente en cabecera HTTP)
     if (!token) {
-      return c.json({ ok: false, error: "Acceso denegado: se requiere credencial de sesión (token de propietario)" }, 401);
+      return c.json({ ok: false, error: "Acceso denegado: se requiere credencial de sesión en cabecera HTTP (x-session-token)" }, 401);
     }
 
     // 3. Obtener sesión

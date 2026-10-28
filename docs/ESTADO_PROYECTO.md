@@ -19,6 +19,7 @@
 | **Fase 5** | **Auditoría Prepublicación y Despliegue Render** | **COMPLETADO Y PROBADO** | 44 tests unitarios + Playwright (2 navegadores) + Build OK | [`docs/VALIDACION_FINAL_PUBLICACION.md`](file:///c:/Proyectos/periferia/capacitación-perxia\dia5/docs/VALIDACION_FINAL_PUBLICACION.md) |
 | **Publicación** | **Publicación Segura en GitHub (origin/main)** | **COMPLETADO Y PUBLICADO** | `git push -u origin main` sin `--force` + merge seguro | [`docs/PUBLICACION_GITHUB.md`](file:///c:/Proyectos/periferia/capacitación-perxia\dia5/docs/PUBLICACION_GITHUB.md) |
 | **Pre-Render** | **Seguridad Descargas, Key Modal y Anti-Evasión Rate Limit** | **COMPLETADO Y AUDITADO** | 44 tests unitarios + Playwright (2 navegadores) + Build OK | [`docs/CORRECCION_PRE_RENDER.md`](file:///c:/Proyectos/periferia/capacitación-perxia\dia5/docs/CORRECCION_PRE_RENDER.md) |
+| **Hardening Final** | **Protección Credenciales, Eliminación Tokens URL y Proxy Render** | **COMPLETADO Y PROBADO** | 46 tests unitarios + Playwright (2 navegadores) + Build OK | [`docs/CORRECCION_FINAL_SEGURIDAD.md`](file:///c:/Proyectos/periferia/capacitación-perxia\dia5/docs/CORRECCION_FINAL_SEGURIDAD.md) |
 
 ---
 
@@ -46,8 +47,8 @@
 - [x] **Cero consumo extra en Fases 3.2, 4 y 5:** Conforme a la regla obligatoria de control de costos, no se realizaron llamadas adicionales a Gemini en estas fases.
 
 ### 2.3 PROBADO CON MOCK
-- [x] **Suite de 44 pruebas unitarias e integración:** Aprobadas en 2.7s con cero consumo de tokens.
-- [x] **Seguridad de Acceso y Aislamiento (`visitor-isolation.test.ts`):** 5 pruebas que verifican: 1) Aislamiento estricto de sesiones entre visitantes (listados disjuntos y 403 en acceso ajeno); 2) Aislamiento físico de carpetas en `out/sessions/<id>/`; 3) Rate limiting (429); 4) Presupuesto global acumulado de tokens (429); 5) Protección opcional con clave de demostración (`DEMO_ACCESS_KEY` -> 401).
+- [x] **Suite de 46 pruebas unitarias e integración:** Aprobadas en 3.9s con cero consumo de tokens.
+- [x] **Seguridad de Acceso y Aislamiento (`visitor-isolation.test.ts`):** 7 pruebas exhaustivas que verifican: 1) Imposibilidad de obtener o enumerar sessionToken mediante visitorId ajeno; 2) Bloqueo de consulta de historial sin credencial válida (401/403); 3) Descargas de archivos sin exponer tokens en URLs (rechazo de query params y descarga vía cabeceras); 4) Rate limiting resistente a manipulación de cabeceras IP en proxy de Render (1-hop); 5) Rechazo de DEMO_ACCESS_KEY en query params y aceptación exclusiva por cabeceras; 6) Aislamiento estricto de operaciones de confirmación; 7) Presupuesto global acumulado de tokens (429).
 - [x] **Pruebas de formateo de fecha (`date-formatting.test.ts`):** Cobertura de entradas corruptas, nulas, fechas inválidas y preformateadas.
 - [x] **Auditoría de campos faltantes (`missing-fields-audit.test.ts`):** Comprobación por etiqueta exacta en los 4 casos del PRD.
 - [x] **Seguridad de confirmaciones (`security-confirmations.test.ts`):** Bloqueo de confirmación cruzada, tokens expirados y rechazo HTTP 400 de paquetes bloqueados.

@@ -1,6 +1,6 @@
 import React from "react";
 import { Building2, FileCheck2, AlertTriangle, XCircle, CheckCircle2, Download, FileSpreadsheet, FileText, Globe, FileCode2 } from "lucide-react";
-import { ToolExecutionRecord, getArtifactDownloadUrl } from "../services/api.js";
+import { ToolExecutionRecord, downloadArtifact } from "../services/api.js";
 
 interface RightSidebarProps {
   toolCalls: ToolExecutionRecord[];
@@ -37,6 +37,16 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
   const dataMapear = (toolMapear?.result as { data?: { llenos: unknown[]; faltantes: unknown[]; requiere_confirmacion: unknown[] } })?.data;
   const dataPaquete = (toolPaquete?.result as { data?: { listo_para_firma: boolean; checklist: { soportes_presentes: string[]; soportes_ausentes: string[]; soportes_vencidos: string[]; campos_faltantes: string[] } } })?.data;
   const dataEnvio = (toolEnvio?.result as { data?: { ruta: string } })?.data;
+
+  const handleDownload = async (fileName: string) => {
+    if (!currentCase || !sessionId) return;
+    try {
+      await downloadArtifact(currentCase, fileName, sessionId);
+    } catch (err) {
+      console.error("Error al descargar archivo:", err);
+      alert(`No se pudo descargar ${fileName}: ${(err as Error).message}`);
+    }
+  };
 
   return (
     <>
@@ -214,83 +224,83 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
               </div>
               <div className="space-y-1.5">
                 {dataLeer?.formato === "xlsx" && (
-                  <a
-                    href={getArtifactDownloadUrl(currentCase, "formulario.xlsx", sessionId || undefined)}
-                    download="formulario.xlsx"
-                    className="flex items-center justify-between p-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors text-xs text-slate-700 group cursor-pointer"
+                  <button
+                    type="button"
+                    onClick={() => handleDownload("formulario.xlsx")}
+                    className="w-full flex items-center justify-between p-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors text-xs text-slate-700 group cursor-pointer text-left"
                   >
                     <div className="flex items-center gap-2">
                       <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
                       <span className="font-mono text-[11px] group-hover:text-emerald-700 font-medium">formulario.xlsx</span>
                     </div>
                     <Download className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600" />
-                  </a>
+                  </button>
                 )}
 
                 {dataLeer?.formato === "pdf" && (
-                  <a
-                    href={getArtifactDownloadUrl(currentCase, "formulario.pdf", sessionId || undefined)}
-                    download="formulario.pdf"
-                    className="flex items-center justify-between p-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors text-xs text-slate-700 group cursor-pointer"
+                  <button
+                    type="button"
+                    onClick={() => handleDownload("formulario.pdf")}
+                    className="w-full flex items-center justify-between p-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors text-xs text-slate-700 group cursor-pointer text-left"
                   >
                     <div className="flex items-center gap-2">
                       <FileText className="w-4 h-4 text-rose-600" />
                       <span className="font-mono text-[11px] group-hover:text-rose-700 font-medium">formulario.pdf</span>
                     </div>
                     <Download className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600" />
-                  </a>
+                  </button>
                 )}
 
                 {dataLeer?.formato === "portal" && (
-                  <a
-                    href={getArtifactDownloadUrl(currentCase, "valores-portal.md", sessionId || undefined)}
-                    download="valores-portal.md"
-                    className="flex items-center justify-between p-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors text-xs text-slate-700 group cursor-pointer"
+                  <button
+                    type="button"
+                    onClick={() => handleDownload("valores-portal.md")}
+                    className="w-full flex items-center justify-between p-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors text-xs text-slate-700 group cursor-pointer text-left"
                   >
                     <div className="flex items-center gap-2">
                       <Globe className="w-4 h-4 text-sky-600" />
                       <span className="font-mono text-[11px] group-hover:text-sky-700 font-medium">valores-portal.md</span>
                     </div>
                     <Download className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600" />
-                  </a>
+                  </button>
                 )}
 
-                <a
-                  href={getArtifactDownloadUrl(currentCase, "checklist.md", sessionId || undefined)}
-                  download="checklist.md"
-                  className="flex items-center justify-between p-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors text-xs text-slate-700 group cursor-pointer"
+                <button
+                  type="button"
+                  onClick={() => handleDownload("checklist.md")}
+                  className="w-full flex items-center justify-between p-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors text-xs text-slate-700 group cursor-pointer text-left"
                 >
                   <div className="flex items-center gap-2">
                     <FileCheck2 className="w-4 h-4 text-slate-600" />
                     <span className="font-mono text-[11px] group-hover:text-slate-900 font-medium">checklist.md</span>
                   </div>
                   <Download className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600" />
-                </a>
+                </button>
 
-                <a
-                  href={getArtifactDownloadUrl(currentCase, "borrador-correo.md", sessionId || undefined)}
-                  download="borrador-correo.md"
-                  className="flex items-center justify-between p-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors text-xs text-slate-700 group cursor-pointer"
+                <button
+                  type="button"
+                  onClick={() => handleDownload("borrador-correo.md")}
+                  className="w-full flex items-center justify-between p-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors text-xs text-slate-700 group cursor-pointer text-left"
                 >
                   <div className="flex items-center gap-2">
                     <FileCode2 className="w-4 h-4 text-slate-600" />
                     <span className="font-mono text-[11px] group-hover:text-slate-900 font-medium">borrador-correo.md</span>
                   </div>
                   <Download className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600" />
-                </a>
+                </button>
 
                 {dataEnvio && (
-                  <a
-                    href={getArtifactDownloadUrl(currentCase, "ENVIO-SIMULADO.md", sessionId || undefined)}
-                    download="ENVIO-SIMULADO.md"
-                    className="flex items-center justify-between p-2 rounded-lg border border-emerald-300 bg-emerald-50/50 hover:bg-emerald-100/50 transition-colors text-xs text-emerald-800 group cursor-pointer"
+                  <button
+                    type="button"
+                    onClick={() => handleDownload("ENVIO-SIMULADO.md")}
+                    className="w-full flex items-center justify-between p-2 rounded-lg border border-emerald-300 bg-emerald-50/50 hover:bg-emerald-100/50 transition-colors text-xs text-emerald-800 group cursor-pointer text-left"
                   >
                     <div className="flex items-center gap-2">
                       <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                       <span className="font-mono text-[11px] font-bold">ENVIO-SIMULADO.md</span>
                     </div>
                     <Download className="w-3.5 h-3.5 text-emerald-700" />
-                  </a>
+                  </button>
                 )}
               </div>
             </div>
