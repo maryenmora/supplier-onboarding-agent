@@ -44,11 +44,13 @@ export interface HealthResponse {
   model: string;
   modelAvailable: boolean;
   status: string;
+  keyRequired?: boolean;
   timestamp: string;
 }
 
 export interface SessionSummary {
   id: string;
+  sessionToken?: string;
   createdAt: string;
   updatedAt: string;
   messagesCount: number;
@@ -59,6 +61,7 @@ export interface SessionSummary {
 
 const API_BASE = "";
 
+// 1. Manejo de Visitor ID
 export function getVisitorId(): string {
   try {
     let id = localStorage.getItem("perxia_visitor_id");
@@ -72,17 +75,78 @@ export function getVisitorId(): string {
   }
 }
 
-export function getAuthHeaders(): Record<string, string> {
+// 2. Manejo de Tokens de Sesión (Credenciales de Propietario)
+const sessionTokensMap = new Map<string, string>();
+
+export function storeSessionToken(sessionId: string, token: string): void {
+  sessionTokensMap.set(sessionId, token);
+  try {
+    sessionStorage.setItem(`perxia_stk_${sessionId}`, token);
+  } catch {
+    // Entornos sin sessionStorage
+  }
+}
+
+export function getSessionToken(sessionId: string): string | null {
+  if (sessionTokensMap.has(sessionId)) {
+    return sessionTokensMap.get(sessionId)!;
+  }
+  try {
+    const val = sessionStorage.getItem(`perxia_stk_${sessionId}`);
+    if (val) {
+      sessionTokensMap.set(sessionId, val);
+      return val;
+    }
+  } catch {
+    // Entornos sin sessionStorage
+  }
+  return null;
+}
+
+// 3. Manejo de Clave de Demostración Privada (DEMO_ACCESS_KEY - Sólo durante la sesión de navegador)
+let memoryDemoKey: string | null = null;
+
+export function getDemoKey(): string | null {
+  if (memoryDemoKey) return memoryDemoKey;
+  try {
+    return sessionStorage.getItem("perxia_demo_key");
+  } catch {
+    return null;
+  }
+}
+
+export function setDemoKey(key: string): void {
+  memoryDemoKey = key;
+  try {
+    sessionStorage.setItem("perxia_demo_key", key);
+  } catch {
+    // Entornos sin sessionStorage
+  }
+}
+
+export function clearDemoKey(): void {
+  memoryDemoKey = null;
+  try {
+    sessionStorage.removeItem("perxia_demo_key");
+  } catch {
+    // Entornos sin sessionStorage
+  }
+}
+
+export function getAuthHeaders(sessionId?: string): Record<string, string> {
   const headers: Record<string, string> = {
     "x-visitor-id": getVisitorId()
   };
-  try {
-    const demoKey = localStorage.getItem("perxia_demo_key");
-    if (demoKey) {
-      headers["x-demo-key"] = demoKey;
+  const demoKey = getDemoKey();
+  if (demoKey) {
+    headers["x-demo-key"] = demoKey;
+    headers["authorization"] = `Bearer ${demoKey}`;
+  }
+  if (sessionId) {
+    const token = getSessionToken(sessionId);
+    if (token) {
+      headers["x-session-token"] = token;
     }
-  } catch {
-    // Entornos sin localStorage
   }
   return headers;
 }
@@ -100,7 +164,7 @@ export async function sendChatMessage(message: string, sessionId?: string, refer
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...getAuthHeaders()
+      ...getAuthHeaders(sessionId)
     },
     body: JSON.stringify({ message, sessionId, referenceDate, visitorId: getVisitorId() })
   });
@@ -109,6 +173,9 @@ export async function sendChatMessage(message: string, sessionId?: string, refer
   if (!json.ok) {
     throw new Error(json.error || "Error al procesar el mensaje");
   }
+  if (json.data?.sessionId && json.data?.sessionToken) {
+    storeSessionToken(json.data.sessionId, json.data.sessionToken);
+  }
   return json.data;
 }
 
@@ -116,23 +183,38 @@ export async function fetchSessions(): Promise<SessionSummary[]> {
   const res = await fetch(`${API_BASE}/api/sessions`, {
     headers: getAuthHeaders()
   });
+  if (res.status === 401) {
+    throw new Error("401 Unauthorized: Clave de acceso requerida");
+  }
   if (!res.ok) throw new Error("Error consultando sesiones");
   const json = await res.json();
-  return json.data || [];
+  const list = json.data || [];
+  for (const s of list) {
+    if (s.id && s.sessionToken) {
+      storeSessionToken(s.id, s.sessionToken);
+    }
+  }
+  return list;
 }
 
 export async function fetchSessionDetail(id: string) {
   const res = await fetch(`${API_BASE}/api/sessions/${id}`, {
-    headers: getAuthHeaders()
+    headers: getAuthHeaders(id)
   });
+  if (res.status === 401) {
+    throw new Error("401 Unauthorized: Clave de acceso requerida");
+  }
   if (!res.ok) throw new Error("Error consultando detalle de sesión");
   const json = await res.json();
+  if (json.data?.id && json.data?.sessionToken) {
+    storeSessionToken(json.data.id, json.data.sessionToken);
+  }
   return json.data;
 }
 
 export async function fetchPendingConfirmation(sessionId: string): Promise<{ hasPending: boolean; confirmation: PendingConfirmation | null }> {
   const res = await fetch(`${API_BASE}/api/sessions/${sessionId}/confirmation`, {
-    headers: getAuthHeaders()
+    headers: getAuthHeaders(sessionId)
   });
   if (!res.ok) return { hasPending: false, confirmation: null };
   const json = await res.json();
@@ -144,7 +226,7 @@ export async function confirmOperation(sessionId: string, token?: string, caso?:
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...getAuthHeaders()
+      ...getAuthHeaders(sessionId)
     },
     body: JSON.stringify({ token, caso })
   });
@@ -155,15 +237,20 @@ export async function confirmOperation(sessionId: string, token?: string, caso?:
 export async function rejectOperation(sessionId: string): Promise<boolean> {
   const res = await fetch(`${API_BASE}/api/sessions/${sessionId}/reject`, {
     method: "POST",
-    headers: getAuthHeaders()
+    headers: getAuthHeaders(sessionId)
   });
   const json = await res.json();
   return json.ok === true;
 }
 
-export function getArtifactDownloadUrl(caso: string, file: string, sessionId?: string): string {
+export function getArtifactDownloadUrl(caso: string, file: string, sessionId?: string, token?: string): string {
+  if (!sessionId) return "#";
   const params = new URLSearchParams();
-  if (sessionId) params.set("sessionId", sessionId);
+  params.set("sessionId", sessionId);
+  const resolvedToken = token || getSessionToken(sessionId);
+  if (resolvedToken) {
+    params.set("token", resolvedToken);
+  }
   params.set("visitorId", getVisitorId());
   const query = params.toString() ? `?${params.toString()}` : "";
   return `${API_BASE}/api/artifacts/${encodeURIComponent(caso)}/${encodeURIComponent(file)}${query}`;

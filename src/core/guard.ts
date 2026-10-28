@@ -13,6 +13,10 @@ export interface ConcurrencySlot {
 export class ResourceGuard {
   // 1. Registro de solicitudes por visitante (ventana deslizante de 60s)
   private requestTimestamps = new Map<string, number[]>();
+  // 1b. Registro de solicitudes por IP (ventana deslizante de 60s)
+  private ipRequestTimestamps = new Map<string, number[]>();
+  // 1c. Registro de identidades declaradas por IP
+  private ipVisitorMap = new Map<string, { visitorId: string; ts: number }[]>();
   private readonly maxRequestsPerMinute: number;
 
   // 2. Control de concurrencia para Gemini
@@ -43,11 +47,46 @@ export class ResourceGuard {
   }
 
   /**
-   * Valida la tasa de solicitudes (Rate Limiting) por visitante/IP
+   * Valida la tasa de solicitudes (Rate Limiting) por visitante y por IP del cliente,
+   * impidiendo eludir la protección cambiando arbitrariamente el visitorId.
    */
-  public checkRateLimit(visitorId: string): RateLimitResult {
+  public checkRateLimit(visitorId: string, clientIp?: string): RateLimitResult {
     const now = Date.now();
     const windowMs = 60 * 1000;
+
+    // 1. Control de red por IP del cliente (si está disponible)
+    if (clientIp) {
+      const ipTimestamps = (this.ipRequestTimestamps.get(clientIp) || []).filter((ts) => now - ts < windowMs);
+      if (ipTimestamps.length >= this.maxRequestsPerMinute) {
+        const oldest = ipTimestamps[0];
+        const retryAfterSeconds = Math.ceil((windowMs - (now - oldest)) / 1000);
+        return {
+          allowed: false,
+          retryAfterSeconds,
+          message: `Límite de solicitudes por minuto excedido para la conexión (${this.maxRequestsPerMinute}/min). Por favor espere ${retryAfterSeconds} segundos.`
+        };
+      }
+
+      // Control contra elusión por cambio arbitrario y acelerado de visitorId desde la misma IP
+      const recentVisitors = (this.ipVisitorMap.get(clientIp) || []).filter((v) => now - v.ts < windowMs);
+      const uniqueVisitors = new Set(recentVisitors.map((v) => v.visitorId));
+      uniqueVisitors.add(visitorId);
+      if (uniqueVisitors.size > 5) {
+        return {
+          allowed: false,
+          retryAfterSeconds: 60,
+          message: "Actividad sospechosa detectada: cambio excesivo de identidad de visitante desde la misma conexión. Acceso temporalmente restringido."
+        };
+      }
+
+      ipTimestamps.push(now);
+      this.ipRequestTimestamps.set(clientIp, ipTimestamps);
+
+      recentVisitors.push({ visitorId, ts: now });
+      this.ipVisitorMap.set(clientIp, recentVisitors);
+    }
+
+    // 2. Control por identificador de visitante
     const timestamps = (this.requestTimestamps.get(visitorId) || []).filter((ts) => now - ts < windowMs);
 
     if (timestamps.length >= this.maxRequestsPerMinute) {

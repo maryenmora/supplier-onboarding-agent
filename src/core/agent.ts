@@ -30,6 +30,7 @@ export interface AgentConfig {
 
 export interface AgentProcessResult {
   sessionId: string;
+  sessionToken?: string;
   reply: string;
   toolCalls: ToolExecutionRecord[];
   needsConfirmation: boolean;
@@ -267,6 +268,7 @@ export class AgentEngine {
 
     return {
       sessionId: session.id,
+      sessionToken: session.sessionToken,
       reply: finalReply,
       toolCalls: toolCallsThisTurn,
       needsConfirmation,

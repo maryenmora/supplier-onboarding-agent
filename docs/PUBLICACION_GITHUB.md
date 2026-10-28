@@ -147,3 +147,4 @@ El repositorio `https://github.com/maryenmora/supplier-onboarding-agent` se encu
 
 > [!IMPORTANT]
 > Siguiendo estrictamente la instrucción de parada, **NO se ha iniciado ningún despliegue en Render**. El sistema queda listo y en espera de autorización explícita para la Fase de Despliegue en la nube.
+

@@ -85,7 +85,7 @@ test("Seguridad de Acceso: Aislamiento estricto de sesiones entre visitantes ind
   assert.equal(injectChatResB.status, 403, "Debe impedir enviar mensajes a sesión ajena");
 });
 
-test("Seguridad de Acceso: Aislamiento físico de archivos en out/sessions entre sesiones", async () => {
+test("Seguridad de Acceso: Aislamiento físico y pruebas negativas de descarga de artefactos", async () => {
   const { app } = createServer({ useMock: true });
 
   const visitorA = "visitante_archivos_A";
@@ -101,52 +101,86 @@ test("Seguridad de Acceso: Aislamiento físico de archivos en out/sessions entre
     body: JSON.stringify({ message: "Procesa el caso co-industrias-delta" })
   });
   assert.equal(chatResA.status, 200);
-  const sessionIdA = (await chatResA.json()).data.sessionId;
+  const dataA = (await chatResA.json()).data;
+  const sessionIdA = dataA.sessionId;
+  const tokenA = dataA.sessionToken;
 
   // Verificar que los archivos se crearon en su carpeta aislada
   const sessionDirA = path.resolve(process.cwd(), "out", "sessions", sessionIdA, "co-industrias-delta");
   assert.ok(fs.existsSync(sessionDirA), "El directorio aislado de la sesión debe existir");
 
-  // 1. Visitante B intenta descargar el archivo de Visitante A con su sessionId -> 403 Forbidden
-  const downloadResB = await app.request(`/api/artifacts/co-industrias-delta/formulario.xlsx?sessionId=${sessionIdA}`, {
+  // 1. Prueba Negativa: Descargar sin sesión -> 400 Bad Request
+  const resNoSession = await app.request("/api/artifacts/co-industrias-delta/formulario.xlsx");
+  assert.equal(resNoSession.status, 400, "Descarga sin sesión debe retornar 400");
+  const jsonNoSession = await resNoSession.json();
+  assert.match(jsonNoSession.error, /Se requiere un identificador de sesión válido/i);
+
+  // 2. Prueba Negativa: Descargar sin credencial de propietario -> 401 Unauthorized
+  const resNoToken = await app.request(`/api/artifacts/co-industrias-delta/formulario.xlsx?sessionId=${sessionIdA}`, {
+    headers: { "x-visitor-id": visitorA }
+  });
+  assert.equal(resNoToken.status, 401, "Descarga sin credencial/token debe retornar 401");
+  const jsonNoToken = await resNoToken.json();
+  assert.match(jsonNoToken.error, /se requiere credencial de sesión/i);
+
+  // 3. Prueba Negativa: Descargar con token de propietario inválido -> 403 Forbidden
+  const resBadToken = await app.request(`/api/artifacts/co-industrias-delta/formulario.xlsx?sessionId=${sessionIdA}&token=token_invalido_hacker`, {
+    headers: { "x-visitor-id": visitorA }
+  });
+  assert.equal(resBadToken.status, 403, "Descarga con token inválido debe retornar 403");
+  const jsonBadToken = await resBadToken.json();
+  assert.match(jsonBadToken.error, /credencial de propietario inválida/i);
+
+  // 4. Prueba Negativa: Descargar documentos de otra sesión (otro visitorId) -> 403 Forbidden
+  const downloadResB = await app.request(`/api/artifacts/co-industrias-delta/formulario.xlsx?sessionId=${sessionIdA}&token=${tokenA}`, {
     headers: { "x-visitor-id": visitorB }
   });
   assert.equal(downloadResB.status, 403, "Debe rechazar la descarga de archivo de otra sesión");
   const downloadJsonB = await downloadResB.json();
   assert.match(downloadJsonB.error, /pertenece a otra sesión/i);
 
-  // 2. Visitante A descarga su propio archivo con su sessionId -> 200 OK
-  const downloadResA = await app.request(`/api/artifacts/co-industrias-delta/formulario.xlsx?sessionId=${sessionIdA}`, {
+  // 5. Prueba Positiva: Visitante A descarga su propio archivo con su sessionId y token válido -> 200 OK
+  const downloadResA = await app.request(`/api/artifacts/co-industrias-delta/formulario.xlsx?sessionId=${sessionIdA}&token=${tokenA}`, {
     headers: { "x-visitor-id": visitorA }
   });
   assert.equal(downloadResA.status, 200, "Visitante A debe poder descargar su propio artefacto");
   assert.equal(downloadResA.headers.get("Content-Type"), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
 });
 
-test("Protección de Consumo: Rate Limiting por visitante (Frecuencia)", async () => {
+test("Protección de Consumo: Rate Limiting y bloqueo contra elusión por cambio arbitrario de visitorId", async () => {
   const guard = new ResourceGuard({ maxRequestsPerMinute: 3 });
   const { app } = createServer({ useMock: true, resourceGuard: guard });
-  const visitor = "visitante_spam_test";
+  const ipSimulada = "198.51.100.25";
 
-  // 3 peticiones permitidas
-  for (let i = 0; i < 3; i++) {
+  // Enviar 3 peticiones desde la misma IP rotando arbitrariamente el visitorId en cada una
+  for (let i = 1; i <= 3; i++) {
     const res = await app.request("/api/chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "x-visitor-id": visitor },
-      body: JSON.stringify({ message: `Mensaje ${i}` })
+      headers: {
+        "Content-Type": "application/json",
+        "x-forwarded-for": ipSimulada,
+        "x-visitor-id": `visitor_arbitrario_${i}`
+      },
+      body: JSON.stringify({ message: `Mensaje de ataque ${i}` })
     });
-    assert.equal(res.status, 200);
+    assert.equal(res.status, 200, `Petición ${i} dentro de cuota permitida`);
   }
 
-  // La 4ta petición debe ser rechazada con 429
-  const resLimit = await app.request("/api/chat", {
+  // La 4ta petición, aunque use un 4to visitorId diferente, DEBE ser rechazada con 429
+  const resEvasion = await app.request("/api/chat", {
     method: "POST",
-    headers: { "Content-Type": "application/json", "x-visitor-id": visitor },
-    body: JSON.stringify({ message: "Mensaje excesivo" })
+    headers: {
+      "Content-Type": "application/json",
+      "x-forwarded-for": ipSimulada,
+      "x-visitor-id": "visitor_arbitrario_4"
+    },
+    body: JSON.stringify({ message: "Intento de evadir límite rotando visitorId" })
   });
-  assert.equal(resLimit.status, 429);
-  const jsonLimit = await resLimit.json();
-  assert.match(jsonLimit.error, /Límite de solicitudes por minuto excedido/i);
+
+  assert.equal(resEvasion.status, 429, "Debe rechazar con 429 al alcanzar límite de IP sin importar rotación de visitorId");
+  const jsonEvasion = await resEvasion.json();
+  assert.equal(jsonEvasion.ok, false);
+  assert.match(jsonEvasion.error, /(Límite de solicitudes por minuto excedido para la conexión|Actividad sospechosa detectada)/i);
 });
 
 test("Protección de Consumo: Presupuesto Global de Tokens (Global Token Budget)", async () => {
@@ -180,6 +214,19 @@ test("Seguridad de Acceso: Clave de demostración privada (DEMO_ACCESS_KEY)", as
   assert.equal(resNoKey.status, 401);
   const jsonNoKey = await resNoKey.json();
   assert.match(jsonNoKey.error, /Clave de acceso de evaluación requerida/i);
+
+  // 1b. Petición con clave de demo incorrecta -> 401 Unauthorized
+  const resBadKey = await app.request("/api/chat", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-demo-key": "clave_totalmente_erronea_999"
+    },
+    body: JSON.stringify({ message: "Hola con clave errónea" })
+  });
+  assert.equal(resBadKey.status, 401);
+  const jsonBadKey = await resBadKey.json();
+  assert.match(jsonBadKey.error, /Clave de acceso de evaluación requerida o inválida/i);
 
   // 2. Healthcheck no requiere clave (para Render / monitoreo)
   const healthRes = await app.request("/api/health");

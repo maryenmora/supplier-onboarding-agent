@@ -193,6 +193,14 @@ async function runBrowserValidation() {
     // TEST 6: Descarga de Artefactos Físicos
     // -------------------------------------------------------------------------
     console.log("[9] Validando descargas de documentos generados...");
+    const browserVisitorId = await page.evaluate(() => localStorage.getItem("perxia_visitor_id") || "");
+    const sessionsRes = await fetch(`${BASE_URL}/api/sessions`, {
+      headers: { "x-visitor-id": browserVisitorId }
+    });
+    const sessionsList = (await sessionsRes.json()).data;
+    const activeSession = sessionsList[0];
+    assert.ok(activeSession?.id && activeSession?.sessionToken, "Debe existir una sesión activa con token en el navegador");
+
     const filesToTest = [
       { caso: "co-industrias-delta", file: "formulario.xlsx", minSize: 5000, type: "spreadsheetml" },
       { caso: "ec-corp-andina", file: "formulario.pdf", minSize: 2000, type: "pdf" },
@@ -202,9 +210,18 @@ async function runBrowserValidation() {
       { caso: "co-industrias-delta", file: "borrador-correo.md", minSize: 500, type: "text/markdown" }
     ];
 
+    // Prueba negativa previa: Descargar sin sesión o sin token
+    const testNeg1 = await fetch(`${BASE_URL}/api/artifacts/co-industrias-delta/formulario.xlsx`);
+    assert.equal(testNeg1.status, 400, "Descarga sin sesión debe retornar 400");
+    const testNeg2 = await fetch(`${BASE_URL}/api/artifacts/co-industrias-delta/formulario.xlsx?sessionId=${activeSession.id}`);
+    assert.equal(testNeg2.status, 401, "Descarga sin token de sesión debe retornar 401");
+
     for (const item of filesToTest) {
-      const res = await fetch(`${BASE_URL}/api/artifacts/${item.caso}/${item.file}`);
-      assert.equal(res.status, 200, `Descarga de ${item.file} debe responder 200`);
+      const downloadUrl = `${BASE_URL}/api/artifacts/${item.caso}/${item.file}?sessionId=${activeSession.id}&token=${activeSession.sessionToken}`;
+      const res = await fetch(downloadUrl, {
+        headers: { "x-visitor-id": browserVisitorId }
+      });
+      assert.equal(res.status, 200, `Descarga autorizada de ${item.file} debe responder 200`);
       const contentType = res.headers.get("content-type") || "";
       assert.ok(contentType.includes(item.type), `Content-Type debe contener ${item.type}`);
       const buffer = await res.arrayBuffer();
@@ -398,6 +415,16 @@ async function runBrowserValidation() {
       }, idsA[0]);
       assert.equal(hijackAttempt.status, 403, "Visitante B debe recibir 403 Forbidden al intentar acceder a sesión de Visitante A");
       console.log("  ✓ Intento de acceso ajeno desde navegador B rechazado con HTTP 403");
+
+      // Visitante B intenta descargar un artefacto de la sesión de Visitante A sin credencial de propietario
+      const hijackArtifact = await pageB.evaluate(async (targetId) => {
+        const res = await fetch(`/api/artifacts/co-industrias-delta/formulario.xlsx?sessionId=${targetId}`, {
+          headers: { "x-visitor-id": localStorage.getItem("perxia_visitor_id") || "" }
+        });
+        return { status: res.status };
+      }, idsA[0]);
+      assert.ok(hijackArtifact.status === 401 || hijackArtifact.status === 403, "Descarga de artefacto ajeno debe ser rechazada con 401/403");
+      console.log("  ✓ Intento de descarga de artefacto ajeno desde navegador B rechazado con HTTP 401/403");
     }
 
     await contextB.close();

@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import { createServer } from "../src/server.js";
 
 const { app, sessionManager } = createServer({ useMock: true });
@@ -101,18 +103,27 @@ test("HTTP Confirmación Humana: /confirmation, /confirm y /reject", async () =>
 });
 
 test("HTTP GET /api/artifacts: Descarga segura y bloqueo de Path Traversal", async () => {
-  // Descarga válida de un artefacto generado en Fase 1
-  const validRes = await app.request("/api/artifacts/co-industrias-delta/formulario.xlsx");
+  const testSession = sessionManager.getOrCreate("sesion-test-artifacts");
+  const sessArtifactDir = path.resolve(process.cwd(), "out", "sessions", testSession.id, "co-industrias-delta");
+  fs.mkdirSync(sessArtifactDir, { recursive: true });
+  fs.writeFileSync(path.resolve(sessArtifactDir, "formulario.xlsx"), "dummy xlsx content");
+
+  // Descarga válida de un artefacto con sesión y token de propietario
+  const validRes = await app.request(`/api/artifacts/co-industrias-delta/formulario.xlsx?sessionId=${testSession.id}&token=${testSession.sessionToken}`);
   assert.equal(validRes.status, 200);
   assert.equal(validRes.headers.get("Content-Type"), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
 
-  // Descarga de archivo no existente
-  const notFoundRes = await app.request("/api/artifacts/co-industrias-delta/archivo-fantasma.xyz");
+  // Descarga de archivo no existente dentro de la sesión
+  const notFoundRes = await app.request(`/api/artifacts/co-industrias-delta/archivo-fantasma.xyz?sessionId=${testSession.id}&token=${testSession.sessionToken}`);
   assert.equal(notFoundRes.status, 404);
 
   // Intento de Path Traversal
-  const traversalRes = await app.request("/api/artifacts/co-industrias-delta/..%2f..%2fpackage.json");
+  const traversalRes = await app.request(`/api/artifacts/co-industrias-delta/..%2f..%2fpackage.json?sessionId=${testSession.id}&token=${testSession.sessionToken}`);
   assert.equal(traversalRes.status, 400);
+
+  // Intento de descarga sin sesión
+  const noSessionRes = await app.request("/api/artifacts/co-industrias-delta/formulario.xlsx");
+  assert.equal(noSessionRes.status, 400);
 });
 
 test("HTTP POST /api/chat: Control de cuota y límite de tokens por sesión (429)", async () => {

@@ -22,6 +22,7 @@ export interface PendingConfirmation {
 
 export class Session {
   public readonly id: string;
+  public readonly sessionToken: string;
   public readonly createdAt: Date;
   public updatedAt: Date;
   public visitorId?: string;
@@ -30,11 +31,20 @@ export class Session {
   public pendingConfirmation: PendingConfirmation | null = null;
   public totalTokens: TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
 
-  constructor(id?: string, visitorId?: string) {
+  constructor(id?: string, visitorId?: string, sessionToken?: string) {
     this.id = id || `sess_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`;
+    this.sessionToken = sessionToken || `stk_${crypto.randomBytes(16).toString("hex")}`;
     this.visitorId = visitorId;
     this.createdAt = new Date();
     this.updatedAt = new Date();
+  }
+
+  /**
+   * Valida la credencial de posesión/propiedad emitida por el servidor
+   */
+  public validateToken(providedToken?: string): boolean {
+    if (!providedToken) return false;
+    return this.sessionToken === providedToken;
   }
 
   public addMessage(msg: LlmMessage): void {
@@ -135,12 +145,16 @@ export class SessionManager {
     this.maxSessionsPerVisitor = options?.maxSessionsPerVisitor || Number(process.env.MAX_SESSIONS_PER_VISITOR || 10);
   }
 
-  public getOrCreate(id?: string, visitorId?: string): Session {
+  public getOrCreate(id?: string, visitorId?: string, sessionToken?: string): Session {
     if (id && this.sessions.has(id)) {
       const existing = this.sessions.get(id)!;
       // Si la sesión ya tiene un visitorId asignado y se proporciona uno diferente, impedir usurpación
       if (existing.visitorId && visitorId && existing.visitorId !== visitorId) {
         throw new Error("Acceso denegado: la sesión pertenece a otro visitante");
+      }
+      // Si se proporciona token y no coincide, denegar usurpación
+      if (sessionToken && !existing.validateToken(sessionToken)) {
+        throw new Error("Acceso denegado: credencial de sesión inválida");
       }
       if (!existing.visitorId && visitorId) {
         existing.visitorId = visitorId;
@@ -171,16 +185,20 @@ export class SessionManager {
       }
     }
 
-    const session = new Session(id, visitorId);
+    const session = new Session(id, visitorId, sessionToken);
     this.sessions.set(session.id, session);
     return session;
   }
 
-  public get(id: string, visitorId?: string): Session | undefined {
+  public get(id: string, visitorId?: string, sessionToken?: string): Session | undefined {
     const session = this.sessions.get(id);
     if (!session) return undefined;
     // Si se consulta con un visitorId específico, comprobar propiedad
     if (visitorId && session.visitorId && session.visitorId !== visitorId) {
+      return undefined;
+    }
+    // Si se consulta con un sessionToken específico, comprobar validez
+    if (sessionToken && !session.validateToken(sessionToken)) {
       return undefined;
     }
     return session;

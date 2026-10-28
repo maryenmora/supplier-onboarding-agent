@@ -45,9 +45,28 @@ export function createServer(options?: {
     maxIterations: Number(process.env.MAX_AGENT_ITERATIONS || 10)
   });
 
+  // Helper para extraer clientIp para rate limiting robusto contra spoofing de visitorId
+  const extractClientIp = (c: { req: { header: (k: string) => string | undefined } }): string => {
+    const cf = c.req.header("cf-connecting-ip");
+    if (cf) return cf.trim();
+    const forwarded = c.req.header("x-forwarded-for");
+    if (forwarded) {
+      const first = forwarded.split(",")[0].trim();
+      if (first) return first;
+    }
+    const realIp = c.req.header("x-real-ip");
+    if (realIp) return realIp.trim();
+    return "127.0.0.1";
+  };
+
   // Helper para extraer visitorId unívoco
   const extractVisitorId = (c: { req: { header: (k: string) => string | undefined; query: (k: string) => string | undefined } }) => {
     return c.req.header("x-visitor-id") || c.req.query("visitorId") || undefined;
+  };
+
+  // Helper para extraer credencial opaca de sesión emitida por el servidor
+  const extractSessionToken = (c: { req: { header: (k: string) => string | undefined; query: (k: string) => string | undefined } }) => {
+    return c.req.header("x-session-token") || c.req.query("token") || c.req.query("sessionToken") || undefined;
   };
 
   // Helper para extraer clave de acceso de evaluación
@@ -108,10 +127,12 @@ export function createServer(options?: {
       }
 
       const { sessionId, message, referenceDate: refDateStr } = parsed.data;
-      const visitorId = parsed.data.visitorId || extractVisitorId(c) || `vis_${Date.now()}`;
+      const clientIp = extractClientIp(c);
+      const visitorId = parsed.data.visitorId || extractVisitorId(c) || `vis_${clientIp.replace(/[^a-zA-Z0-9]/g, "_")}`;
+      const sessionToken = extractSessionToken(c);
 
-      // 1. Control de Frecuencia de Solicitudes (Rate Limiting)
-      const rateCheck = guard.checkRateLimit(visitorId);
+      // 1. Control de Frecuencia de Solicitudes (Rate Limiting por visitante y por IP para evitar elusión)
+      const rateCheck = guard.checkRateLimit(visitorId, clientIp);
       if (!rateCheck.allowed) {
         return c.json({ ok: false, error: rateCheck.message }, 429);
       }
@@ -131,12 +152,12 @@ export function createServer(options?: {
 
       // 4. Control de pertenencia y presupuesto de tokens por sesión
       if (sessionId) {
-        const existingSession = agentEngine.getSessionManager().get(sessionId, visitorId);
+        const existingSession = agentEngine.getSessionManager().get(sessionId, visitorId, sessionToken);
         if (!existingSession) {
-          // Comprobar si la sesión existe para otro visitante
+          // Comprobar si la sesión existe para otro visitante o con token incorrecto
           const otherSession = agentEngine.getSessionManager().get(sessionId);
           if (otherSession) {
-            return c.json({ ok: false, error: "Acceso denegado: la sesión pertenece a otro visitante" }, 403);
+            return c.json({ ok: false, error: "Acceso denegado: la sesión pertenece a otro visitante o credencial inválida" }, 403);
           }
         }
         const maxTokens = Number(process.env.MAX_SESSION_TOKENS || 50000);
@@ -176,6 +197,9 @@ export function createServer(options?: {
       }
 
       c.header("x-visitor-id", visitorId);
+      if (result.sessionToken) {
+        c.header("x-session-token", result.sessionToken);
+      }
       return c.json({
         ok: true,
         data: {
@@ -197,6 +221,7 @@ export function createServer(options?: {
     const visitorId = extractVisitorId(c);
     const sessions = agentEngine.getSessionManager().list(visitorId).map((s) => ({
       id: s.id,
+      sessionToken: s.sessionToken,
       createdAt: s.createdAt,
       updatedAt: s.updatedAt,
       messagesCount: s.messages.length,
@@ -225,6 +250,7 @@ export function createServer(options?: {
       ok: true,
       data: {
         id: session.id,
+        sessionToken: session.sessionToken,
         createdAt: session.createdAt,
         updatedAt: session.updatedAt,
         messages: session.messages,
@@ -393,14 +419,15 @@ export function createServer(options?: {
     });
   });
 
-  // 9. GET /api/artifacts/:caso/:file - Descarga segura de artefactos con prevención de Path Traversal y aislamiento
+  // 9. GET /api/artifacts/:caso/:file - Descarga segura de artefactos con credencial de sesión obligatoria
   app.get("/api/artifacts/:caso/:file", (c) => {
     const rawCaso = c.req.param("caso");
     const rawFile = c.req.param("file");
     const sessionId = c.req.query("sessionId") || c.req.header("x-session-id");
+    const token = extractSessionToken(c);
     const visitorId = extractVisitorId(c);
 
-    // Sanitización estricta
+    // Sanitización estricta de parámetros
     if (!/^[a-zA-Z0-9_-]+$/.test(rawCaso)) {
       return c.json({ ok: false, error: "Parámetro caso inválido" }, 400);
     }
@@ -408,64 +435,51 @@ export function createServer(options?: {
       return c.json({ ok: false, error: "Nombre de archivo inválido" }, 400);
     }
 
-    // Si se especifica sessionId, verificar que la sesión pertenezca al visitante
-    if (sessionId) {
-      if (!/^[a-zA-Z0-9_-]+$/.test(sessionId)) {
-        return c.json({ ok: false, error: "Identificador de sesión inválido" }, 400);
-      }
-      const session = agentEngine.getSessionManager().get(sessionId);
-      if (!session) {
-        return c.json({ ok: false, error: "Sesión no encontrada" }, 404);
-      }
-      if (visitorId && session.visitorId && session.visitorId !== visitorId) {
-        return c.json({ ok: false, error: "Acceso denegado: este artefacto pertenece a otra sesión" }, 403);
-      }
+    // 1. Toda descarga web EXIGE un sessionId válido (prohibido sin sesión)
+    if (!sessionId || !/^[a-zA-Z0-9_-]+$/.test(sessionId)) {
+      return c.json({ ok: false, error: "Se requiere un identificador de sesión válido para descargar artefactos" }, 400);
     }
 
+    // 2. Toda descarga web EXIGE credencial opaca de sesión emitida por el servidor (token de propietario)
+    if (!token) {
+      return c.json({ ok: false, error: "Acceso denegado: se requiere credencial de sesión (token de propietario)" }, 401);
+    }
+
+    // 3. Obtener sesión
+    const session = agentEngine.getSessionManager().get(sessionId);
+    if (!session) {
+      return c.json({ ok: false, error: "Sesión no encontrada" }, 404);
+    }
+
+    // 4. Validar credencial del propietario (token opaco de sesión)
+    if (!session.validateToken(token)) {
+      return c.json({ ok: false, error: "Acceso denegado: credencial de propietario inválida" }, 403);
+    }
+
+    // 5. Validar pertenencia del visitorId (defensa en profundidad)
+    if (visitorId && session.visitorId && session.visitorId !== visitorId) {
+      return c.json({ ok: false, error: "Acceso denegado: este artefacto pertenece a otra sesión" }, 403);
+    }
+
+    // 6. Localización física: ÚNICAMENTE dentro del directorio aislado de la sesión
     const outDir = path.resolve(baseDir, "out");
-    const candidateDirs: string[] = [];
-
-    // Prioridad 1: Directorio aislado de sesión
-    if (sessionId) {
-      candidateDirs.push(
-        path.resolve(outDir, "sessions", sessionId, rawCaso),
-        path.resolve(outDir, "sessions", sessionId, rawCaso, "paquete")
-      );
-    } else {
-      // Si no se pasa sessionId, buscar en las sesiones activas recientes
-      const sessionsBase = path.resolve(outDir, "sessions");
-      if (fs.existsSync(sessionsBase)) {
-        try {
-          const sessionFolders = fs.readdirSync(sessionsBase);
-          for (const sFolder of sessionFolders.reverse()) {
-            candidateDirs.push(
-              path.resolve(sessionsBase, sFolder, rawCaso),
-              path.resolve(sessionsBase, sFolder, rawCaso, "paquete")
-            );
-          }
-        } catch {
-          // Ignorar error de lectura de directorio
-        }
-      }
-    }
-
-    // Prioridad 2: Directorio out global (compatibilidad con demo y solicitudes sin sesión)
-    candidateDirs.push(
-      path.resolve(outDir, rawCaso),
-      path.resolve(outDir, rawCaso, "paquete")
-    );
+    const sessionCaseDir = path.resolve(outDir, "sessions", sessionId, rawCaso);
+    const candidateDirs = [
+      sessionCaseDir,
+      path.resolve(sessionCaseDir, "paquete")
+    ];
 
     let filePath: string | null = null;
     for (const dir of candidateDirs) {
       const candidate = path.resolve(dir, rawFile);
-      if (candidate.startsWith(outDir) && fs.existsSync(candidate)) {
+      if (candidate.startsWith(sessionCaseDir) && fs.existsSync(candidate)) {
         filePath = candidate;
         break;
       }
     }
 
     if (!filePath || !fs.existsSync(filePath)) {
-      return c.json({ ok: false, error: "Artefacto no encontrado" }, 404);
+      return c.json({ ok: false, error: "Artefacto no encontrado en la sesión especificada" }, 404);
     }
 
     const ext = path.extname(filePath).toLowerCase();

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { LeftSidebar } from "./components/LeftSidebar.js";
 import { RightSidebar } from "./components/RightSidebar.js";
 import { ChatView, MessageItem } from "./components/ChatView.js";
+import { DemoAccessModal } from "./components/DemoAccessModal.js";
 import {
   checkHealth,
   sendChatMessage,
@@ -9,6 +10,9 @@ import {
   fetchSessionDetail,
   confirmOperation,
   rejectOperation,
+  getDemoKey,
+  setDemoKey,
+  clearDemoKey,
   SessionSummary,
   HealthResponse,
   PendingConfirmation,
@@ -36,20 +40,54 @@ export const App: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [leftMobileOpen, setLeftMobileOpen] = useState<boolean>(false);
   const [rightMobileOpen, setRightMobileOpen] = useState<boolean>(false);
+  const [isKeyModalOpen, setIsKeyModalOpen] = useState<boolean>(false);
+  const [keyModalError, setKeyModalError] = useState<string | null>(null);
+  const [isKeySubmitting, setIsKeySubmitting] = useState<boolean>(false);
 
   // Cargar estado del backend y sesiones existentes
   const refreshData = useCallback(async () => {
     try {
-      const [healthData, sessionsList] = await Promise.all([
-        checkHealth().catch(() => null),
-        fetchSessions().catch(() => [])
-      ]);
-      if (healthData) setHealth(healthData);
+      const healthData = await checkHealth().catch(() => null);
+      if (healthData) {
+        setHealth(healthData);
+        if (healthData.keyRequired && !getDemoKey()) {
+          setIsKeyModalOpen(true);
+        }
+      }
+      const sessionsList = await fetchSessions().catch((err: Error) => {
+        if (err.message && err.message.includes("401")) {
+          setIsKeyModalOpen(true);
+          setKeyModalError("Clave de acceso de evaluación requerida (HTTP 401)");
+        }
+        return [];
+      });
       setSessions(sessionsList);
     } catch {
       // Ignorar errores de red iniciales
     }
   }, []);
+
+  const handleValidateDemoKey = async (key: string) => {
+    setIsKeySubmitting(true);
+    setKeyModalError(null);
+    try {
+      setDemoKey(key);
+      const list = await fetchSessions();
+      setSessions(list);
+      setIsKeyModalOpen(false);
+      setKeyModalError(null);
+    } catch (err: unknown) {
+      clearDemoKey();
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("401")) {
+        setKeyModalError("Clave de acceso incorrecta o inválida (HTTP 401). Verifica e inténtalo de nuevo.");
+      } else {
+        setKeyModalError(msg || "Error al validar la clave de acceso.");
+      }
+    } finally {
+      setIsKeySubmitting(false);
+    }
+  };
 
   useEffect(() => {
     refreshData();
@@ -247,6 +285,14 @@ export const App: React.FC = () => {
         sessionId={currentSessionId}
         isOpenMobile={rightMobileOpen}
         onCloseMobile={() => setRightMobileOpen(false)}
+      />
+
+      {/* Modal de Acceso a Demostración Privada (DEMO_ACCESS_KEY) */}
+      <DemoAccessModal
+        isOpen={isKeyModalOpen}
+        onSubmit={handleValidateDemoKey}
+        error={keyModalError}
+        isSubmitting={isKeySubmitting}
       />
     </div>
   );
