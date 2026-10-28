@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: retoperxia-registro-proveedor
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm install && npm install --prefix web && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: HOST
+        value: 0.0.0.0
+      - key: GEMINI_MODEL
+        value: gemini-3.5-flash-lite
+      - key: MAX_AGENT_ITERATIONS
+        value: "15"
+      - key: MAX_SESSION_TOKENS
+        value: "50000"
+      - key: ALLOW_REFERENCE_DATE
+        value: "false"
+      - key: GEMINI_API_KEY
+        sync: false

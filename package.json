@@ -1,0 +1,39 @@
+{
+  "name": "reto-01-registro-proveedor",
+  "version": "1.0.0",
+  "description": "Agente conversacional para automatizar el registro de proveedores - Periferia IT Group",
+  "main": "src/tools/proveedor.ts",
+  "type": "module",
+  "scripts": {
+    "build": "npm run web:build && tsc",
+    "build:all": "npm run web:build && tsc",
+    "start": "tsx src/server.ts",
+    "demo": "tsx demo.ts",
+    "test": "tsx --test test/*.test.ts",
+    "test:live": "tsx --test test/live/*.test.ts",
+    "test:e2e": "tsx test/e2e/browser-validation.ts",
+    "web:build": "npm run build --prefix web",
+    "web:dev": "npm run dev --prefix web"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@google/genai": "^2.31.0",
+    "@hono/node-server": "^2.1.5",
+    "dotenv": "^18.0.9",
+    "exceljs": "^4.4.0",
+    "hono": "^4.13.14",
+    "pdf-parse": "^2.4.5",
+    "pdfkit": "^0.16.0",
+    "tsx": "^4.19.2",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.1",
+    "@types/pdf-parse": "^1.1.5",
+    "@types/pdfkit": "^0.13.9",
+    "playwright": "^1.64.1",
+    "typescript": "^5.7.2"
+  }
+}
