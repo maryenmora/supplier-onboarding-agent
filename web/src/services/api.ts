@@ -160,12 +160,13 @@ export function getAuthHeaders(sessionId?: string): Record<string, string> {
   }
   const demoKey = getDemoKey();
   if (demoKey) {
+    // REQUISITO ESTRICTO: Utilizar exclusivamente x-demo-key para la clave de demostración desde el frontend
     headers["x-demo-key"] = demoKey;
-    headers["authorization"] = `Bearer ${demoKey}`;
   }
   if (sessionId) {
     const token = getSessionToken(sessionId);
     if (token) {
+      // REQUISITO ESTRICTO: Utilizar x-session-token para identificar la sesión propietaria
       headers["x-session-token"] = token;
     }
   }

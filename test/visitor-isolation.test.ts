@@ -350,3 +350,156 @@ test("Protección de Consumo: Presupuesto Global de Tokens (Global Token Budget)
   const json = await res.json();
   assert.match(json.error, /Presupuesto global de tokens de la demostración alcanzado/i);
 });
+
+// =============================================================================
+// VERIFICACIÓN BUG PRODUCCIÓN (RENDER): Separación de DEMO_ACCESS_KEY y sessionToken
+// =============================================================================
+test("Regresión Render: Separación estricta de DEMO_ACCESS_KEY y x-session-token en descargas, historial y multi-turno", async () => {
+  const guard = new ResourceGuard({ demoAccessKey: "clave_demo_render_2026" });
+  const { app } = createServer({ useMock: true, resourceGuard: guard });
+
+  const visitorA = "visitante_render_A";
+  const visitorB = "visitante_render_B";
+
+  // 1. Visitante A procesa caso co-industrias-delta con DEMO_ACCESS_KEY configurada
+  const chatResA = await app.request("/api/chat", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-demo-key": "clave_demo_render_2026",
+      "x-visitor-id": visitorA
+    },
+    body: JSON.stringify({ message: "Procesa el caso co-industrias-delta" })
+  });
+  assert.equal(chatResA.status, 200);
+  const dataA = (await chatResA.json()).data;
+  const sessionIdA = dataA.sessionId;
+  const sessionTokenA = dataA.sessionToken;
+  assert.ok(sessionIdA && sessionTokenA);
+
+  // 2. Continuación de conversación multi-turno existente:
+  // Enviar segundo mensaje con x-demo-key y x-session-token
+  const chatTurn2 = await app.request("/api/chat", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-demo-key": "clave_demo_render_2026",
+      "x-visitor-id": visitorA,
+      "x-session-token": sessionTokenA
+    },
+    body: JSON.stringify({
+      sessionId: sessionIdA,
+      message: "¿Cuál es el estado de la solicitud?"
+    })
+  });
+  assert.equal(chatTurn2.status, 200, "Multi-turno debe funcionar sin conflicto entre clave demo y token sesión");
+
+  // 3. Recuperación del historial de la sesión propietaria
+  const historyRes = await app.request(`/api/sessions/${sessionIdA}`, {
+    headers: {
+      "x-demo-key": "clave_demo_render_2026",
+      "x-visitor-id": visitorA,
+      "x-session-token": sessionTokenA
+    }
+  });
+  assert.equal(historyRes.status, 200, "Historial debe responder 200 con demo-key y session-token");
+  const historyJson = await historyRes.json();
+  assert.equal(historyJson.data.id, sessionIdA);
+  assert.ok(historyJson.data.messages.length >= 4);
+
+  // 4. Visitante B crea su propia sesión para obtener otro sessionToken
+  const chatResB = await app.request("/api/chat", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-demo-key": "clave_demo_render_2026",
+      "x-visitor-id": visitorB
+    },
+    body: JSON.stringify({ message: "Hola desde sesión B" })
+  });
+  assert.equal(chatResB.status, 200);
+  const dataB = (await chatResB.json()).data;
+  const sessionTokenB = dataB.sessionToken;
+
+  // CASO A: Demo key válida + session token válido → descarga HTTP 200
+  const dlValid = await app.request(`/api/artifacts/co-industrias-delta/formulario.xlsx?sessionId=${sessionIdA}`, {
+    headers: {
+      "x-demo-key": "clave_demo_render_2026",
+      "x-visitor-id": visitorA,
+      "x-session-token": sessionTokenA
+    }
+  });
+  assert.equal(dlValid.status, 200, "Demo key válida + session token válido debe responder 200 OK");
+  assert.equal(dlValid.headers.get("Content-Type"), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+
+  // CASO B: Demo key válida + session token de otra sesión → HTTP 403
+  const dlWrongToken = await app.request(`/api/artifacts/co-industrias-delta/formulario.xlsx?sessionId=${sessionIdA}`, {
+    headers: {
+      "x-demo-key": "clave_demo_render_2026",
+      "x-visitor-id": visitorA,
+      "x-session-token": sessionTokenB
+    }
+  });
+  assert.equal(dlWrongToken.status, 403, "Demo key válida + session token de otra sesión debe responder 403");
+
+  // CASO C: Demo key válida + session token ausente → HTTP 401
+  const dlNoSessionToken = await app.request(`/api/artifacts/co-industrias-delta/formulario.xlsx?sessionId=${sessionIdA}`, {
+    headers: {
+      "x-demo-key": "clave_demo_render_2026",
+      "x-visitor-id": visitorA
+    }
+  });
+  assert.equal(dlNoSessionToken.status, 401, "Demo key válida + session token ausente debe responder 401");
+
+  // CASO D: Demo key incorrecta → HTTP 401
+  const dlBadDemoKey = await app.request(`/api/artifacts/co-industrias-delta/formulario.xlsx?sessionId=${sessionIdA}`, {
+    headers: {
+      "x-demo-key": "clave_demo_totalmente_invalida",
+      "x-visitor-id": visitorA,
+      "x-session-token": sessionTokenA
+    }
+  });
+  assert.equal(dlBadDemoKey.status, 401, "Demo key incorrecta debe responder 401");
+
+  // CASO E: Descargas válidas de todos los formatos en sesión A (XLSX, checklist, borrador)
+  const dlChecklist = await app.request(`/api/artifacts/co-industrias-delta/checklist.md?sessionId=${sessionIdA}`, {
+    headers: {
+      "x-demo-key": "clave_demo_render_2026",
+      "x-visitor-id": visitorA,
+      "x-session-token": sessionTokenA
+    }
+  });
+  assert.equal(dlChecklist.status, 200);
+  assert.equal(dlChecklist.headers.get("Content-Type"), "text/markdown; charset=utf-8");
+
+  const dlBorrador = await app.request(`/api/artifacts/co-industrias-delta/borrador-correo.md?sessionId=${sessionIdA}`, {
+    headers: {
+      "x-demo-key": "clave_demo_render_2026",
+      "x-visitor-id": visitorA,
+      "x-session-token": sessionTokenA
+    }
+  });
+  assert.equal(dlBorrador.status, 200);
+  assert.equal(dlBorrador.headers.get("Content-Type"), "text/markdown; charset=utf-8");
+
+  // CASO F: Verificación con cliente externo enviando Authorization: Bearer <DEMO_ACCESS_KEY>
+  // Si envía Bearer de demo Y x-session-token, x-session-token tiene prioridad absoluta -> 200 OK
+  const dlBearerWithSessionToken = await app.request(`/api/artifacts/co-industrias-delta/formulario.xlsx?sessionId=${sessionIdA}`, {
+    headers: {
+      "Authorization": "Bearer clave_demo_render_2026",
+      "x-visitor-id": visitorA,
+      "x-session-token": sessionTokenA
+    }
+  });
+  assert.equal(dlBearerWithSessionToken.status, 200, "Bearer demo key + x-session-token debe responder 200");
+
+  // Si envía SOLO Authorization: Bearer <DEMO_ACCESS_KEY> sin x-session-token,
+  // el servidor NO debe confundir la demo key con el session token (debe retornar 401 sin credencial de sesión, NO 403)
+  const dlBearerWithoutSessionToken = await app.request(`/api/artifacts/co-industrias-delta/formulario.xlsx?sessionId=${sessionIdA}`, {
+    headers: {
+      "Authorization": "Bearer clave_demo_render_2026",
+      "x-visitor-id": visitorA
+    }
+  });
+  assert.equal(dlBearerWithoutSessionToken.status, 401, "Bearer demo key sin sessionToken debe responder 401");
+});

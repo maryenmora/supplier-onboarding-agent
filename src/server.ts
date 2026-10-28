@@ -99,21 +99,39 @@ export function createServer(options?: {
   };
 
   // Helper para extraer credencial opaca de sesión emitida por el servidor (NUNCA de URL query parameters)
+  // REGLA ARQUITECTURAL: Prioridad absoluta a x-session-token. Un Bearer de demo NUNCA se interpreta como token de sesión.
   const extractSessionToken = (c: { req: { header: (k: string) => string | undefined } }) => {
+    // 1. Prioridad absoluta: cabecera x-session-token para identificar la sesión propietaria
+    const sessionTokenHeader = c.req.header("x-session-token");
+    if (sessionTokenHeader) {
+      return sessionTokenHeader.trim();
+    }
+    // 2. Fallback a Authorization: Bearer <token> SOLO si NO es la clave de demostración (DEMO_ACCESS_KEY)
     const authHeader = c.req.header("authorization");
     if (authHeader && authHeader.startsWith("Bearer ")) {
-      return authHeader.slice(7).trim();
+      const candidate = authHeader.slice(7).trim();
+      // Si coincide con la clave de demostración, NUNCA interpretarlo como token de sesión propietario
+      if (guard.isKeyRequired() && guard.validateAccessKey(candidate)) {
+        return undefined;
+      }
+      return candidate;
     }
-    return c.req.header("x-session-token") || undefined;
+    return undefined;
   };
 
   // Helper para extraer clave de acceso de evaluación (NUNCA de URL query parameters)
   const extractDemoKey = (c: { req: { header: (k: string) => string | undefined } }) => {
+    // 1. Cabecera específica x-demo-key (utilizada exclusivamente por el frontend)
+    const demoHeader = c.req.header("x-demo-key");
+    if (demoHeader) {
+      return demoHeader.trim();
+    }
+    // 2. Cabecera Authorization: Bearer <key> para clientes externos o herramientas CLI
     const authHeader = c.req.header("authorization");
     if (authHeader && authHeader.startsWith("Bearer ")) {
       return authHeader.slice(7).trim();
     }
-    return c.req.header("x-demo-key") || undefined;
+    return undefined;
   };
 
   // Middleware de CORS
